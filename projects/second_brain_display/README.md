@@ -2,7 +2,7 @@
 
 Visualizador de escritorio Always-On, de **ultra-alta legibilidad**, sin retroiluminación ni emisión de luz azul, diseñado específicamente para la pantalla de tinta electrónica a color **E-Ink® Spectra™ 6 (800×480)** del **Seeed Studio reTerminal E1002**.
 
-Muestra en tiempo real los pendientes, prioridades, vencimientos y estados de cuentas del segundo cerebro de Camilo Henríquez (`~/develop/personal/simpli-second-brain`), sincronizándose automáticamente por Wi-Fi con un backend ligero que corre en la **Raspberry Pi** (`tor`).
+Muestra en tiempo real los pendientes, prioridades, vencimientos y estados de cuentas del segundo cerebro de SimpliRoute, sincronizándose automáticamente por Wi-Fi con un backend ligero que corre en un servidor local o Raspberry Pi.
 
 ---
 
@@ -66,16 +66,16 @@ Para lograr una legibilidad perfecta a 1 metro de distancia en el escritorio:
 
 ```mermaid
 flowchart TD
-    SB["SimpliRoute Second Brain<br/>(~/develop/personal/simpli-second-brain)"]
+    SB["Repositorio Second Brain<br/>(Notas y Pendientes)"]
     TOOL["tools/herdr-pendientes/sb.py"]
     
-    subgraph Pi["Raspberry Pi (tor - 192.168.4.36)"]
-        DP["backend/data_provider.py<br/>(Extracción de 23 pendientes y 5 vistas)"]
+    subgraph Pi["Servidor Local / Raspberry Pi (:8088)"]
+        DP["backend/data_provider.py<br/>(Extracción de pendientes y 5 vistas)"]
         REND["backend/renderer.py<br/>(Renderizado Pillow 800x480)"]
         SRV["backend/server.py<br/>(HTTP Server :8088 & Systemd)"]
     end
     
-    subgraph Device["reTerminal E1002 (ESP32-S3 - 192.168.31.205)"]
+    subgraph Device["reTerminal E1002 (ESP32-S3)"]
         FIRM["ESPHome Firmware<br/>(second_brain_display.yaml)"]
         EPD["Pantalla E-Ink Spectra 6<br/>(800x480 SPI)"]
         BTN["Botones Físicos<br/>(KEY0, KEY1, KEY2)"]
@@ -98,7 +98,7 @@ flowchart TD
 
 ## ⚙️ Características del Firmware (ESPHome)
 
-El archivo de configuración [`projects/second_brain_display/firmware/second_brain_display.yaml`](file:///home/pi/develop/personal/reTerminal/projects/second_brain_display/firmware/second_brain_display.yaml) incluye:
+El archivo de configuración [`firmware/second_brain_display.yaml`](firmware/second_brain_display.yaml) incluye:
 
 1. **Mapeo Físico de Botones (Perspectiva Frontal)**:
    - **Botón Blanco Izquierdo (`GPIO5 / KEY2`)**: Retrocede a la vista anterior (`(view_index - 1 + 5) % 5`) con pitido de confirmación (30% volumen, 40 ms).
@@ -113,7 +113,7 @@ El archivo de configuración [`projects/second_brain_display/firmware/second_bra
    - **Noches y Fines de Semana**: Cero refrescos automáticos. La pantalla E-Ink permanece estática consumiendo 0 vatios, ahorrando batería y ciclos de vida útil del panel. La interacción manual por botones sigue disponible 24/7.
 3. **Telemetría Bidireccional Integrada**:
    - En cada refresco o cambio de vista, el reTerminal adjunta sus lecturas en la URL:
-     `http://192.168.4.36:8088/render?view=resumen&vbat=4.11&temp=26.5&hum=48.0`
+     `http://<IP_SERVIDOR>:8088/render?view=resumen&vbat=4.11&temp=26.5&hum=48.0`
    - El backend registra la telemetría, dibuja el porcentaje de batería en la cabecera y la temperatura/humedad en el pie, y la expone en la API JSON.
 4. **Actualizaciones Inalámbricas (OTA)**:
    - Soporte nativo para flasheo por Wi-Fi sin necesidad de conectar el dispositivo por cable USB a la computadora.
@@ -122,7 +122,7 @@ El archivo de configuración [`projects/second_brain_display/firmware/second_bra
 
 ## 🚀 Despliegue y Comandos Útiles
 
-### 1. Backend en la Raspberry Pi
+### 1. Backend en el Servidor / Raspberry Pi
 
 El backend corre como un servicio systemd de usuario:
 
@@ -139,11 +139,11 @@ journalctl --user -u second-brain-display.service -f
 
 ### 2. Simulador Web y API
 
-Puedes previsualizar el panel desde cualquier navegador conectado a la red local o Tailscale:
+Puedes previsualizar el panel desde cualquier navegador conectado a la red local:
 
-* **Dashboard Web y Simulador Interactivo:** `http://192.168.4.36:8088/`
-* **Endpoint de Imagen para el reTerminal:** `http://192.168.4.36:8088/render?view=resumen`
-* **Endpoint JSON de Datos y Telemetría:** `http://192.168.4.36:8088/api/pendientes`
+* **Dashboard Web y Simulador Interactivo:** `http://<IP_SERVIDOR>:8088/`
+* **Endpoint de Imagen para el reTerminal:** `http://<IP_SERVIDOR>:8088/render?view=resumen`
+* **Endpoint JSON de Datos y Telemetría:** `http://<IP_SERVIDOR>:8088/api/pendientes`
 
 ### 3. Compilación y Flasheo de Firmware
 
@@ -152,5 +152,5 @@ Puedes previsualizar el panel desde cualquier navegador conectado a la red local
 .venv/bin/esphome run projects/second_brain_display/firmware/second_brain_display.yaml --device /dev/ttyUSB0
 
 # Actualizaciones inalámbricas por Wi-Fi (OTA)
-.venv/bin/esphome run projects/second_brain_display/firmware/second_brain_display.yaml --device 192.168.31.205
+.venv/bin/esphome run projects/second_brain_display/firmware/second_brain_display.yaml --device <IP_DISPOSITIVO>
 ```

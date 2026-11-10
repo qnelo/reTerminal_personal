@@ -8,8 +8,8 @@ Repositorio centralizado con toda la información técnica, manuales, esquemáti
 
 Este repositorio recopila y organiza el contenido de las siguientes fuentes oficiales:
 1. **Página Oficial del Producto**: [Seeed Studio reTerminal E1002 (SKU 100017057)](https://www.seeedstudio.com/reTerminal-E1002-p-6533.html)
-2. **Folleto y Especificaciones de la Pantalla (PDF)**: [reTerminal E Series ePaper Display PDF](https://files.seeedstudio.com/wiki/reterminal_e10xx/res/reTerminal_E_Series_ePaper_Display.pdf) *(Copia local en [docs/pdf/reTerminal_E_Series_ePaper_Display.pdf](file:///home/pi/develop/personal/reTerminal/docs/pdf/reTerminal_E_Series_ePaper_Display.pdf))*
-3. **Esquemático Oficial V1.2 (PDF)**: [202004321_reTerminal_E1002_V1_2_SCH_251120.pdf](https://files.seeedstudio.com/wiki/reterminal_e10xx/res/202004321_reTerminal_E1002_V1_2_SCH_251120.pdf) *(Copia local en [docs/pdf/reTerminal_E1002_V1_2_SCH.pdf](file:///home/pi/develop/personal/reTerminal/docs/pdf/reTerminal_E1002_V1_2_SCH.pdf))*
+2. **Folleto y Especificaciones de la Pantalla (PDF)**: [reTerminal E Series ePaper Display PDF](https://files.seeedstudio.com/wiki/reterminal_e10xx/res/reTerminal_E_Series_ePaper_Display.pdf) *(Copia local en [docs/pdf/reTerminal_E_Series_ePaper_Display.pdf](docs/pdf/reTerminal_E_Series_ePaper_Display.pdf))*
+3. **Esquemático Oficial V1.2 (PDF)**: [202004321_reTerminal_E1002_V1_2_SCH_251120.pdf](https://files.seeedstudio.com/wiki/reterminal_e10xx/res/202004321_reTerminal_E1002_V1_2_SCH_251120.pdf) *(Copia local en [docs/pdf/reTerminal_E1002_V1_2_SCH.pdf](docs/pdf/reTerminal_E1002_V1_2_SCH.pdf))*
 4. **Wiki Oficial - Página Principal Serie reTerminal E**: [Seeed Studio Wiki - reTerminal E Series](https://wiki.seeedstudio.com/reterminal_e10xx_main_page/)
 5. **Wiki Oficial - Primeros Pasos con E1002**: [Getting Started with reTerminal E1002](https://wiki.seeedstudio.com/getting_started_with_reterminal_e1002/)
 6. **Wiki Oficial - Integración con ESPHome**: [reTerminal E Series with ESPHome](https://wiki.seeedstudio.com/reterminal_e10xx_with_esphome/)
@@ -47,7 +47,7 @@ Este repositorio recopila y organiza el contenido de las siguientes fuentes ofic
   - Zumbador piezoeléctrico (PWM).
   - Conector de expansión J2 de 8 pines (3.3V, GND, I2C, UART, ADC, GPIOs).
 
-Consulta todos los detalles de diseño en [docs/HARDWARE.md](file:///home/pi/develop/personal/reTerminal/docs/HARDWARE.md).
+Consulta todos los detalles de diseño en [docs/HARDWARE.md](docs/HARDWARE.md).
 
 ---
 
@@ -99,26 +99,26 @@ Conéctalo a la plataforma de dashboards TRMNL:
 ./scripts/flash_trmnl.sh
 ```
 
-Para instrucciones detalladas paso a paso, consulta [docs/FIRMWARE_GUIDE.md](file:///home/pi/develop/personal/reTerminal/docs/FIRMWARE_GUIDE.md).
+Para instrucciones detalladas paso a paso, consulta [docs/FIRMWARE_GUIDE.md](docs/FIRMWARE_GUIDE.md).
 
 ---
 
 ## 🏠 Integración con ESPHome y Home Assistant
 
-Este repositorio incluye configuraciones listas para usar en [esphome/](file:///home/pi/develop/personal/reTerminal/esphome/):
+Este repositorio incluye configuraciones listas para usar en [esphome/](esphome/):
 
 1. **Crea tu archivo de secretos**:
    ```bash
    cp esphome/secrets.yaml.example esphome/secrets.yaml
    # Edita tus credenciales de Wi-Fi y claves
    ```
-2. **Dashboard Completo de 2 Páginas** ([esphome/reterminal_e1002_dashboard.yaml](file:///home/pi/develop/personal/reTerminal/esphome/reterminal_e1002_dashboard.yaml)):
+2. **Dashboard Completo de 2 Páginas** ([esphome/reterminal_e1002_dashboard.yaml](esphome/reterminal_e1002_dashboard.yaml)):
    - Página 1: Temperatura y Humedad en tiempo real con sensor SHT40.
    - Página 2: Reloj de pared con sincronización Home Assistant.
    - Barra superior con porcentaje de batería y voltaje exacto.
    - Navegación interactiva con botones físicos y confirmación sonora en el zumbador.
-3. **Prueba Mínima de Gráficos y Colores** ([esphome/reterminal_e1002_minimal.yaml](file:///home/pi/develop/personal/reTerminal/esphome/reterminal_e1002_minimal.yaml)).
-4. **Diagnóstico Total de Periféricos** ([esphome/reterminal_e1002_all_peripherals.yaml](file:///home/pi/develop/personal/reTerminal/esphome/reterminal_e1002_all_peripherals.yaml)):
+3. **Prueba Mínima de Gráficos y Colores** ([esphome/reterminal_e1002_minimal.yaml](esphome/reterminal_e1002_minimal.yaml)).
+4. **Diagnóstico Total de Periféricos** ([esphome/reterminal_e1002_all_peripherals.yaml](esphome/reterminal_e1002_all_peripherals.yaml)):
    - Display + SHT40 + RTC PCF8563 + Detección MicroSD + Micrófono PDM + Batería + Buzzer + LED.
 
 Para compilar y flashear por cable:
@@ -126,17 +126,17 @@ Para compilar y flashear por cable:
 esphome run esphome/reterminal_e1002_dashboard.yaml --device /dev/ttyUSB0
 ```
 
-Consulta la guía completa de ESPHome en [docs/ESPHOME_GUIDE.md](file:///home/pi/develop/personal/reTerminal/docs/ESPHOME_GUIDE.md).
+Consulta la guía completa de ESPHome en [docs/ESPHOME_GUIDE.md](docs/ESPHOME_GUIDE.md).
 
 ---
 
 ## 🌟 Proyectos Destacados
 
 ### 1. [Second Brain Display — Pendientes Simpli (reTerminal E1002)](projects/second_brain_display/README.md)
-Visualizador de escritorio Always-On para los pendientes del segundo cerebro de SimpliRoute (`~/develop/personal/simpli-second-brain`):
+Visualizador de escritorio Always-On para los pendientes y tareas del segundo cerebro de SimpliRoute:
 - **5 Vistas Navegables (800×480 px)**: Resumen general con KPIs, Alta Prioridad, Media Prioridad, Baja Prioridad y Por Cliente.
 - **Diseño Ultra-Legible para Spectra 6**: Tipografía bold pesada, tarjetas de alto contraste y jerarquía limpia.
-- **Backend en Raspberry Pi**: Servicio systemd sirviendo imágenes PNG y API JSON con telemetría en tiempo real (`http://192.168.4.36:8088/`).
+- **Backend en Servidor / Raspberry Pi**: Servicio systemd sirviendo imágenes PNG y API JSON con telemetría en tiempo real (puerto :8088).
 - **Firmware ESPHome Inteligente**:
   - Navegación por botones físicos frontales (Izquierdo: anterior, Derecho: siguiente, Verde: sincronizar).
   - Horario laboral inteligente (SNTP): refresco automático cada 15 min solo **Lunes a Viernes entre 08:45 y 19:00 hrs**.

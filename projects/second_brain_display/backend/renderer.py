@@ -311,7 +311,7 @@ def render_view(view_name: str, data: dict[str, Any], telemetry: dict[str, Any] 
 if __name__ == "__main__":
     from data_provider import get_pendientes_data
     d = get_pendientes_data()
-    out_dir = Path("/home/pi/develop/personal/reTerminal/projects/second_brain_display/backend/previews")
+    out_dir = Path(__file__).resolve().parent / "previews"
     out_dir.mkdir(exist_ok=True)
     for v in ["resumen", "alta", "media", "baja", "clientes"]:
         pic = render_view(v, d)

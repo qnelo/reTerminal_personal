@@ -9,7 +9,7 @@ Listado consolidado de enlaces, documentación oficial, esquemáticos, modelos 3
 - **Página de Producto Seeed Studio**: [https://www.seeedstudio.com/reTerminal-E1002-p-6533.html](https://www.seeedstudio.com/reTerminal-E1002-p-6533.html)
 - **Folleto y Especificaciones de la Pantalla ePaper (PDF)**:
   - Enlace oficial: [reTerminal_E_Series_ePaper_Display.pdf](https://files.seeedstudio.com/wiki/reterminal_e10xx/res/reTerminal_E_Series_ePaper_Display.pdf)
-  - Copia local en el repositorio: [docs/pdf/reTerminal_E_Series_ePaper_Display.pdf](file:///home/pi/develop/personal/reTerminal/docs/pdf/reTerminal_E_Series_ePaper_Display.pdf)
+  - Copia local en el repositorio: [docs/pdf/reTerminal_E_Series_ePaper_Display.pdf](pdf/reTerminal_E_Series_ePaper_Display.pdf)
 
 ---
 
@@ -17,7 +17,7 @@ Listado consolidado de enlaces, documentación oficial, esquemáticos, modelos 3
 
 - **Esquemático Oficial reTerminal E1002 V1.2 (PDF)**:
   - Enlace oficial: [202004321_reTerminal_E1002_V1_2_SCH_251120.pdf](https://files.seeedstudio.com/wiki/reterminal_e10xx/res/202004321_reTerminal_E1002_V1_2_SCH_251120.pdf)
-  - Copia local en el repositorio: [docs/pdf/reTerminal_E1002_V1_2_SCH.pdf](file:///home/pi/develop/personal/reTerminal/docs/pdf/reTerminal_E1002_V1_2_SCH.pdf)
+  - Copia local en el repositorio: [docs/pdf/reTerminal_E1002_V1_2_SCH.pdf](pdf/reTerminal_E1002_V1_2_SCH.pdf)
 - **Modelo 3D de la Carcasa / Enclosure (STP)**:
   - [https://files.seeedstudio.com/wiki/reterminal_e10xx/res/reTerminal_E1001_E1002_3D.stp](https://files.seeedstudio.com/wiki/reterminal_e10xx/res/reTerminal_E1001_E1002_3D.stp)
 - **Datasheet Espressif ESP32-S3 (PDF)**:
