@@ -130,6 +130,23 @@ Consulta la guía completa de ESPHome en [docs/ESPHOME_GUIDE.md](file:///home/pi
 
 ---
 
+## 🌟 Proyectos Destacados
+
+### 1. [Second Brain Display — Pendientes Simpli (reTerminal E1002)](projects/second_brain_display/README.md)
+Visualizador de escritorio Always-On para los pendientes del segundo cerebro de SimpliRoute (`~/develop/personal/simpli-second-brain`):
+- **5 Vistas Navegables (800×480 px)**: Resumen general con KPIs, Alta Prioridad, Media Prioridad, Baja Prioridad y Por Cliente.
+- **Diseño Ultra-Legible para Spectra 6**: Tipografía bold pesada, tarjetas de alto contraste y jerarquía limpia.
+- **Backend en Raspberry Pi**: Servicio systemd sirviendo imágenes PNG y API JSON con telemetría en tiempo real (`http://192.168.4.36:8088/`).
+- **Firmware ESPHome Inteligente**:
+  - Navegación por botones físicos frontales (Izquierdo: anterior, Derecho: siguiente, Verde: sincronizar).
+  - Horario laboral inteligente (SNTP): refresco automático cada 15 min solo **Lunes a Viernes entre 08:45 y 19:00 hrs**.
+  - Telemetría en pantalla: porcentaje de batería en cabecera y temperatura/humedad en pie de página.
+  - Actualizaciones inalámbricas por Wi-Fi (**OTA**).
+
+👉 [Ver documentación completa, capturas y arquitectura del proyecto](projects/second_brain_display/README.md).
+
+---
+
 ## 📁 Estructura del Repositorio
 
 ```
@@ -160,6 +177,16 @@ Consulta la guía completa de ESPHome en [docs/ESPHOME_GUIDE.md](file:///home/pi
 │   ├── flash_photoframe.sh                <- Flasheo de ESP32 PhotoFrame
 │   ├── flash_trmnl.sh                     <- Flasheo de TRMNL
 │   └── erase_flash.sh                     <- Borrado completo de memoria
-└── projects/                              <- Directorio de trabajo para nuevos desarrollos
-    └── README.md                          <- Banco de ideas y roadmap de proyectos
+└── projects/                              <- Proyectos y desarrollos personalizados
+    ├── README.md                          <- Banco de ideas y roadmap
+    └── second_brain_display/              <- Visualizador de Pendientes del Second Brain
+        ├── README.md                      <- Documentación, capturas y arquitectura
+        ├── backend/                       <- Backend Python en la Raspberry Pi (API y Renderer)
+        │   ├── data_provider.py           <- Conector con el Second Brain
+        │   ├── renderer.py                <- Motor gráfico Pillow 800x480
+        │   ├── server.py                  <- Servidor HTTP, API y simulador web
+        │   └── previews/                  <- Capturas de las 5 vistas generadas
+        └── firmware/                      <- Firmware ESPHome para reTerminal E1002
+            ├── second_brain_display.yaml  <- Configuración completa (Pantalla, Botones, SNTP, OTA)
+            └── secrets.yaml.example       <- Plantilla de credenciales Wi-Fi
 ```
