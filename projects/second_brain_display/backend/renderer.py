@@ -150,8 +150,8 @@ def draw_base_layout(view_title: str, page_indicator: str, timestamp_str: str, t
         fill_w = max(1, int(17 * (bat_pct / 100.0)))
         draw.rounded_rectangle((bx + 2, by + 2, bx + 2 + fill_w, by + 11), radius=1, fill=bat_color)
 
-        # Texto de porcentaje en verde/rojo
-        draw.text((bx + 30, 15), pct_text, fill=bat_color, font=FONT_BADGE)
+        # Texto de porcentaje siempre en blanco
+        draw.text((bx + 30, 15), pct_text, fill=COLOR_WHITE, font=FONT_BADGE)
     else:
         right_info = f"{view_title.upper()}  [{page_indicator}]  •  {timestamp_str}"
         bbox_r = draw.textbbox((0, 0), right_info, font=FONT_BADGE)
