@@ -1,0 +1,31 @@
+# Git ignore for reTerminal repository
+
+# Secrets and local configurations
+*secrets.yaml
+*.secret
+*.env
+*.env.local
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# ESPHome build artifacts
+.esphome/
+esphome/.esphome/
+*.bin.dump
+
+# Temporary download / extraction files
+*.html
+*.txt.tmp
+tmp/
+temp/
+
+# Large backup flash dumps (avoid accidental huge git commits)
+firmware/backup/
+*.bak
+*.dump

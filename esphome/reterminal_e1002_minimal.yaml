@@ -1,0 +1,52 @@
+esphome:
+  name: reterminal-e1002-minimal
+  friendly_name: "reTerminal E1002 Minimal"
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: arduino
+
+logger:
+  hardware_uart: UART0
+  level: INFO
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+captive_portal:
+
+font:
+  - file: "gfonts://Inter@700"
+    id: my_font
+    size: 28
+
+spi:
+  clk_pin: GPIO7
+  mosi_pin: GPIO9
+
+display:
+  - platform: epaper_spi
+    id: epaper_display
+    model: Seeed-reTerminal-E1002
+    update_interval: 120s
+    lambda: |-
+      const auto BLACK   = Color(0,   0,   0,   0);
+      const auto RED     = Color(255, 0,   0,   0);
+      const auto GREEN   = Color(0,   255, 0,   0);
+      const auto BLUE    = Color(0,   0,   255, 0);
+      const auto YELLOW  = Color(255, 255, 0,   0);
+      const auto WHITE   = Color(255, 255, 255, 0);
+
+      it.fill(WHITE);
+
+      it.rectangle(10, 10, 150, 80, BLACK);
+      it.filled_rectangle(180, 10, 150, 80, RED);
+      it.filled_rectangle(350, 10, 150, 80, GREEN);
+      it.filled_rectangle(520, 10, 150, 80, BLUE);
+      it.filled_rectangle(690, 10, 100, 80, YELLOW);
+
+      it.printf(400, 240, id(my_font), BLACK, TextAlign::CENTER, "Seeed reTerminal E1002");
+      it.printf(400, 300, id(my_font), BLUE, TextAlign::CENTER, "7.3'' Full Color Spectra 6 (800x480)");
+      it.printf(400, 360, id(my_font), RED, TextAlign::CENTER, "ESPHome ePaper Test OK!");

@@ -1,0 +1,263 @@
+esphome:
+  name: reterminal-e1002
+  friendly_name: "reTerminal E1002"
+  on_boot:
+    priority: 600
+    then:
+      - output.turn_on: bsp_sd_enable
+      - output.turn_on: bsp_battery_enable
+      - delay: 100ms
+      - component.update: battery_voltage
+      - component.update: battery_level
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: arduino
+
+# Configuración del log serial por el chip CH340K (UART0)
+logger:
+  hardware_uart: UART0
+  level: INFO
+
+# API de Home Assistant
+api:
+  encryption:
+    key: !secret ha_api_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "reTerminal-E1002"
+    password: "ChangeMe123"
+
+captive_portal:
+
+# Bus SPI para pantalla ePaper
+spi:
+  clk_pin: GPIO7
+  mosi_pin: GPIO9
+
+# Bus I2C para sensor SHT40 y RTC PCF8563
+i2c:
+  scl: GPIO20
+  sda: GPIO19
+
+# Fuentes
+font:
+  - file: "gfonts://Inter@700"
+    id: small_font
+    size: 24
+  - file: "gfonts://Inter@700"
+    id: mid_font
+    size: 36
+  - file: "gfonts://Inter@700"
+    id: big_font
+    size: 140
+  - file: "gfonts://Inter@700"
+    id: time_font
+    size: 96
+
+globals:
+  - id: page_index
+    type: int
+    restore_value: true
+    initial_value: '0'
+
+sensor:
+  # Sensor Sensirion SHT40 integrado
+  - platform: sht4x
+    temperature:
+      name: "Temperatura Interna"
+      id: temp_sensor
+    humidity:
+      name: "Humedad Interna"
+      id: hum_sensor
+
+  # Medición analógica de batería
+  - platform: adc
+    pin: GPIO1
+    name: "Voltaje de Batería"
+    id: battery_voltage
+    update_interval: 60s
+    attenuation: 12db
+    filters:
+      - multiply: 2.0
+
+  # Nivel porcentual de batería con curva de descarga LiPo
+  - platform: template
+    name: "Porcentaje de Batería"
+    id: battery_level
+    unit_of_measurement: "%"
+    icon: "mdi:battery"
+    device_class: battery
+    state_class: measurement
+    lambda: 'return id(battery_voltage).state;'
+    update_interval: 60s
+    filters:
+      - calibrate_linear:
+          - 4.15 -> 100.0
+          - 3.96 -> 90.0
+          - 3.91 -> 80.0
+          - 3.85 -> 70.0
+          - 3.80 -> 60.0
+          - 3.75 -> 50.0
+          - 3.68 -> 40.0
+          - 3.58 -> 30.0
+          - 3.49 -> 20.0
+          - 3.41 -> 10.0
+          - 3.30 -> 5.0
+          - 3.27 -> 0.0
+      - clamp:
+          min_value: 0
+          max_value: 100
+
+output:
+  - platform: gpio
+    pin: GPIO6
+    id: bsp_led
+    inverted: true
+
+  - platform: gpio
+    pin: GPIO16
+    id: bsp_sd_enable
+
+  - platform: gpio
+    pin: GPIO21
+    id: bsp_battery_enable
+
+  - platform: ledc
+    pin: GPIO45
+    id: buzzer_pwm
+
+light:
+  - platform: binary
+    name: "LED Frontal"
+    output: bsp_led
+    id: onboard_led
+
+  - platform: monochromatic
+    name: "Zumbador"
+    output: buzzer_pwm
+    id: buzzer_tone
+
+binary_sensor:
+  # Botón verde (KEY0 / GPIO3): Refrescar pantalla manualmente
+  - platform: gpio
+    pin:
+      number: GPIO3
+      mode: INPUT_PULLUP
+      inverted: true
+    id: btn_refresh
+    name: "Botón Verde (Refresco)"
+    on_press:
+      then:
+        - light.turn_on:
+            id: buzzer_tone
+            brightness: 50%
+        - delay: 50ms
+        - light.turn_off: buzzer_tone
+        - component.update: epaper_display
+
+  # Botón izquierdo (KEY1 / GPIO4): Página anterior
+  - platform: gpio
+    pin:
+      number: GPIO4
+      mode: INPUT_PULLUP
+      inverted: true
+    id: btn_prev
+    name: "Botón Izquierdo (Pág Anterior)"
+    on_press:
+      then:
+        - lambda: |-
+            id(page_index) = (id(page_index) - 1 + 2) % 2;
+            id(epaper_display).update();
+
+  # Botón derecho (KEY2 / GPIO5): Página siguiente
+  - platform: gpio
+    pin:
+      number: GPIO5
+      mode: INPUT_PULLUP
+      inverted: true
+    id: btn_next
+    name: "Botón Derecho (Pág Siguiente)"
+    on_press:
+      then:
+        - lambda: |-
+            id(page_index) = (id(page_index) + 1) % 2;
+            id(epaper_display).update();
+
+# Sincronización de hora desde Home Assistant
+time:
+  - platform: homeassistant
+    id: ha_time
+
+# Pantalla E Ink Spectra 6 (800x480)
+display:
+  - platform: epaper_spi
+    id: epaper_display
+    model: Seeed-reTerminal-E1002
+    update_interval: 300s # Refresco periódico cada 5 minutos
+    lambda: |-
+      const auto BLACK   = Color(0,   0,   0,   0);
+      const auto RED     = Color(255, 0,   0,   0);
+      const auto GREEN   = Color(0,   255, 0,   0);
+      const auto BLUE    = Color(0,   0,   255, 0);
+      const auto YELLOW  = Color(255, 255, 0,   0);
+      const auto WHITE   = Color(255, 255, 255, 0);
+
+      it.fill(WHITE);
+
+      // Barra superior con estado de batería y título
+      it.filled_rectangle(0, 0, 800, 48, BLUE);
+      it.printf(20, 24, id(small_font), WHITE, TextAlign::CENTER_LEFT, "reTerminal E1002 - Spectra 6");
+      it.printf(780, 24, id(small_font), WHITE, TextAlign::CENTER_RIGHT, "BAT: %.0f%% (%.2fV)", id(battery_level).state, id(battery_voltage).state);
+
+      // ---------- PÁGINA 0: SENSORES SHT40 (TEMPERATURA Y HUMEDAD) ----------
+      if (id(page_index) == 0) {
+        // Separador vertical
+        it.filled_rectangle(399, 60, 2, 380, BLACK);
+
+        // Columna Izquierda: Temperatura
+        it.printf(200, 100, id(mid_font), RED, TextAlign::CENTER, "TEMPERATURA");
+        if (id(temp_sensor).has_state()) {
+          it.printf(200, 240, id(big_font), RED, TextAlign::CENTER, "%.1f", id(temp_sensor).state);
+          it.printf(200, 350, id(mid_font), BLACK, TextAlign::CENTER, "°C");
+        } else {
+          it.printf(200, 240, id(mid_font), BLACK, TextAlign::CENTER, "--.- °C");
+        }
+
+        // Columna Derecha: Humedad
+        it.printf(600, 100, id(mid_font), GREEN, TextAlign::CENTER, "HUMEDAD");
+        if (id(hum_sensor).has_state()) {
+          it.printf(600, 240, id(big_font), GREEN, TextAlign::CENTER, "%.0f", id(hum_sensor).state);
+          it.printf(600, 350, id(mid_font), BLACK, TextAlign::CENTER, "% RH");
+        } else {
+          it.printf(600, 240, id(mid_font), BLACK, TextAlign::CENTER, "-- %");
+        }
+
+        it.printf(400, 460, id(small_font), BLACK, TextAlign::CENTER, "[ Pagina 1/2 ] - Pulsa botones superiores para cambiar");
+      }
+      // ---------- PÁGINA 1: RELOJ Y CALENDARIO ----------
+      else {
+        auto now = id(ha_time).now();
+        struct tm timeinfo = now.to_c_tm();
+
+        char timeStr[10];
+        strftime(timeStr, sizeof(timeStr), "%H:%M", &timeinfo);
+        it.printf(400, 200, id(big_font), BLUE, TextAlign::CENTER, "%s", timeStr);
+
+        const char *weekday[] = {"Domingo", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado"};
+        const char *wday = weekday[timeinfo.tm_wday];
+
+        char dateStr[32];
+        strftime(dateStr, sizeof(dateStr), "%d / %m / %Y", &timeinfo);
+        it.printf(400, 320, id(mid_font), YELLOW, TextAlign::CENTER, "%s, %s", wday, dateStr);
+
+        it.printf(400, 460, id(small_font), BLACK, TextAlign::CENTER, "[ Pagina 2/2 ] - Pulsa botones superiores para cambiar");
+      }
