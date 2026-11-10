@@ -119,14 +119,43 @@ def draw_base_layout(view_title: str, page_indicator: str, timestamp_str: str, t
     draw.rectangle((0, 0, 800, 46), fill=COLOR_BLUE)
     draw.text((16, 12), "Pendientes Simpli", fill=COLOR_WHITE, font=FONT_HEADER)
     
-    bat_header_str = ""
+    # Bloque derecho de la cabecera (Vista, Página, Hora y Batería)
     if vbat_val is not None:
         bat_pct = voltage_to_percentage(vbat_val)
-        bat_header_str = f"  •  BAT {bat_pct}%"
+        # Verde desde 15% hacia arriba, roja desde 15% hacia abajo
+        bat_color = (34, 197, 94) if bat_pct > 15 else (220, 38, 38)
 
-    right_info = f"{view_title.upper()}  [{page_indicator}]  •  {timestamp_str}{bat_header_str}"
-    bbox_r = draw.textbbox((0, 0), right_info, font=FONT_BADGE)
-    draw.text((800 - (bbox_r[2] - bbox_r[0]) - 16, 15), right_info, fill=COLOR_WHITE, font=FONT_BADGE)
+        base_info = f"{view_title.upper()}  [{page_indicator}]  •  {timestamp_str}  •  "
+        bbox_base = draw.textbbox((0, 0), base_info, font=FONT_BADGE)
+        base_w = bbox_base[2] - bbox_base[0]
+
+        pct_text = f"{bat_pct}%"
+        bbox_p = draw.textbbox((0, 0), pct_text, font=FONT_BADGE)
+        pct_w = bbox_p[2] - bbox_p[0]
+
+        # Ancho total: texto base + icono (26px) + gap (5px) + pct_text
+        total_w = base_w + 26 + 5 + pct_w
+        start_x = 800 - 16 - total_w
+
+        # Dibujar texto base en blanco
+        draw.text((start_x, 15), base_info, fill=COLOR_WHITE, font=FONT_BADGE)
+
+        # Dibujar icono de batería
+        bx = start_x + base_w
+        by = 16
+        # Contorno y borne positivo
+        draw.rounded_rectangle((bx, by, bx + 22, by + 13), radius=2, outline=bat_color, width=2)
+        draw.rounded_rectangle((bx + 23, by + 3, bx + 25, by + 10), radius=1, fill=bat_color)
+        # Relleno interior proporcional a la carga
+        fill_w = max(1, int(17 * (bat_pct / 100.0)))
+        draw.rounded_rectangle((bx + 2, by + 2, bx + 2 + fill_w, by + 11), radius=1, fill=bat_color)
+
+        # Texto de porcentaje en verde/rojo
+        draw.text((bx + 30, 15), pct_text, fill=bat_color, font=FONT_BADGE)
+    else:
+        right_info = f"{view_title.upper()}  [{page_indicator}]  •  {timestamp_str}"
+        bbox_r = draw.textbbox((0, 0), right_info, font=FONT_BADGE)
+        draw.text((800 - (bbox_r[2] - bbox_r[0]) - 16, 15), right_info, fill=COLOR_WHITE, font=FONT_BADGE)
 
     # 2. Footer inferior (28 px)
     draw.rectangle((0, 452, 800, 480), fill=COLOR_BLACK)

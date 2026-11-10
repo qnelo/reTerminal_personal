@@ -53,7 +53,7 @@ Para lograr una legibilidad perfecta a 1 metro de distancia en el escritorio:
 3. **Estructura y Proporciones de Pantalla (800 × 480 px)**:
    - **Cabecera Superior (46 px - Azul)**:
      - Izquierda: `Pendientes Simpli` (22 px Bold).
-     - Derecha: Nombre de vista y número `[X/5]`, hora de última actualización y porcentaje de batería `• BAT XX%`.
+     - Derecha: Nombre de vista y número `[X/5]`, hora de última actualización e **ícono dinámico de batería** con relleno proporcional y color semántico (**verde** > 15%, **rojo** ≤ 15%).
    - **Cuerpo Central (376 px - Blanco con tarjetas grises)**:
      - Separación de 6 px entre tarjetas, bordes redondeados y márgenes interiores (*padding*) de alto contraste.
    - **Pie de Página (28 px - Negro)**:
