@@ -3,6 +3,13 @@ set -e
 
 PORT="${1:-}"
 
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -x "$DIR/.venv/bin/esptool" ]; then
+    ESPTOOL="$DIR/.venv/bin/esptool"
+else
+    ESPTOOL="esptool"
+fi
+
 if [ -z "$PORT" ]; then
     FOUND=$(ls /dev/ttyUSB* /dev/ttyACM* 2>/dev/null || true)
     if [ -n "$FOUND" ]; then
@@ -13,7 +20,6 @@ if [ -z "$PORT" ]; then
     fi
 fi
 
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TRMNL_DIR="$DIR/firmware/trmnl"
 
 if [ ! -f "$TRMNL_DIR/firmware.bin" ]; then
@@ -26,7 +32,7 @@ echo " Flasheando Firmware: TRMNL ePaper Dashboard 1.8.10"
 echo " Puerto: $PORT"
 echo "======================================================"
 
-esptool --chip esp32s3 \
+"$ESPTOOL" --chip esp32s3 \
   -p "$PORT" \
   -b 921600 \
   --before default_reset \

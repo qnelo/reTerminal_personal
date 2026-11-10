@@ -3,8 +3,15 @@ set -e
 
 PORT="${1:-}"
 
+# Priorizar esptool de .venv si existe
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -x "$DIR/.venv/bin/esptool" ]; then
+    ESPTOOL="$DIR/.venv/bin/esptool"
+else
+    ESPTOOL="esptool"
+fi
+
 if [ -z "$PORT" ]; then
-    echo "Buscando puertos serie conectados..."
     FOUND=$(ls /dev/ttyUSB* /dev/ttyACM* 2>/dev/null || true)
     if [ -n "$FOUND" ]; then
         PORT=$(echo "$FOUND" | head -n 1)
@@ -25,9 +32,9 @@ echo "======================================================"
 echo " Consultando información del ESP32-S3 en $PORT"
 echo "======================================================"
 
-esptool --chip esp32s3 -p "$PORT" chip_id
+"$ESPTOOL" --chip esp32s3 -p "$PORT" chip-id 2>/dev/null || "$ESPTOOL" --chip esp32s3 -p "$PORT" chip_id
 echo ""
 echo "Consultando detalles de la memoria Flash..."
-esptool --chip esp32s3 -p "$PORT" flash_id
+"$ESPTOOL" --chip esp32s3 -p "$PORT" flash-id 2>/dev/null || "$ESPTOOL" --chip esp32s3 -p "$PORT" flash_id
 echo ""
-echo "Dispositivo conectado y listo para flashear."
+echo "Dispositivo conectado y listo para operar."

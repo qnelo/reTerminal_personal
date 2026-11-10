@@ -3,6 +3,13 @@ set -e
 
 PORT="${1:-}"
 
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -x "$DIR/.venv/bin/esptool" ]; then
+    ESPTOOL="$DIR/.venv/bin/esptool"
+else
+    ESPTOOL="esptool"
+fi
+
 if [ -z "$PORT" ]; then
     FOUND=$(ls /dev/ttyUSB* /dev/ttyACM* 2>/dev/null || true)
     if [ -n "$FOUND" ]; then
@@ -24,7 +31,7 @@ if [[ ! "$CONFIRM" =~ ^[sSyY]$ ]]; then
 fi
 
 echo "Borrando flash completa (32 MB)..."
-esptool --chip esp32s3 -p "$PORT" erase_flash
+"$ESPTOOL" --chip esp32s3 -p "$PORT" erase_flash
 
 echo ""
 echo "Memoria Flash borrada con éxito."
