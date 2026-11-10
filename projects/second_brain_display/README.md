@@ -100,17 +100,21 @@ flowchart TD
 
 El archivo de configuración [`firmware/second_brain_display.yaml`](firmware/second_brain_display.yaml) incluye:
 
-1. **Mapeo Físico de Botones (Perspectiva Frontal)**:
-   - **Botón Blanco Izquierdo (`GPIO5 / KEY2`)**: Retrocede a la vista anterior (`(view_index - 1 + 5) % 5`) con pitido de confirmación (30% volumen, 40 ms).
-   - **Botón Blanco Derecho (`GPIO4 / KEY1`)**: Avanza a la vista siguiente (`(view_index + 1) % 5`) con pitido de confirmación (30% volumen, 40 ms).
-   - **Botón Verde Superior (`GPIO3 / KEY0`)**: Sincronización inmediata forzada (`fetch_view`) con pitido medio (40% volumen, 60 ms).
-2. **Horario Inteligente de Refresco (Ahorro de Batería y Pantalla)**:
+1. **Mapeo Físico de Botones (Perspectiva Frontal) y Atajo Combo**:
+   - **Pulsación Simultánea (Izquierdo + Derecho / KEY2 + KEY1)**: Conmuta de modo entre **Pendientes Simpli** y **Galería de Imágenes** con un doble tono confirmatorio y parpadeo LED. Al reiniciar o despertar del deep sleep, el equipo entra por defecto siempre en **Pendientes Simpli**.
+   - **Botón Blanco Izquierdo (`GPIO5 / KEY2`)**: 
+     - En *Modo Pendientes*: Retrocede a la vista anterior (`(view_index - 1 + 5) % 5`).
+     - En *Modo Galería*: Retrocede a la imagen anterior de la galería.
+   - **Botón Blanco Derecho (`GPIO4 / KEY1`)**: 
+     - En *Modo Pendientes*: Avanza a la vista siguiente (`(view_index + 1) % 5`).
+     - En *Modo Galería*: Avanza a la imagen siguiente de la galería.
+   - **Botón Verde Superior (`GPIO3 / KEY0`)**: Sincronización/refresco inmediato de la pantalla actual (funciona en ambos modos).
+2. **Modo Galería y Árbol Genealógico sin Spoilers**:
+   - Galería de láminas gráficas optimizadas para Spectra 6 (800×480 px).
+   - Primera lámina integrada: **Árbol Genealógico de la familia Buendía (*Cien años de soledad*)**, con estructura por generaciones, rasgos simbólicos de cada personaje (mariposas amarillas, pescaditos de oro, cruz de ceniza) y estricto filtro anti-spoilers para acompañar la lectura del libro.
+3. **Horario Inteligente de Refresco (Ahorro de Batería y Pantalla)**:
    - Sincronización horaria automática por red mediante **SNTP** (`America/Santiago`).
-   - El refresco automático ocurre cada 15 minutos **exclusivamente de Lunes a Viernes entre 08:45 y 19:00 hrs**:
-     - `08:45`: Refresco inicial de apertura de jornada laboral.
-     - `09:00` a `18:45`: Refresco periódico cada 15 minutos.
-     - `19:00`: Refresco final de cierre de jornada.
-   - **Noches y Fines de Semana**: Cero refrescos automáticos. La pantalla E-Ink permanece estática consumiendo 0 vatios, ahorrando batería y ciclos de vida útil del panel. La interacción manual por botones sigue disponible 24/7.
+   - El refresco automático por reloj ocurre periódicamente **únicamente cuando el dispositivo está en Modo Pendientes** (no interrumpe la visualización de la galería).
 3. **Telemetría Bidireccional Integrada**:
    - En cada refresco o cambio de vista, el reTerminal adjunta sus lecturas en la URL:
      `http://<IP_SERVIDOR>:8088/render?view=resumen&vbat=4.11&temp=26.5&hum=48.0`

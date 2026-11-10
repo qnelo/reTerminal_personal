@@ -29,3 +29,5 @@ temp/
 firmware/backup/*.bin
 *.bak
 *.dump
+*.log
+*.pid

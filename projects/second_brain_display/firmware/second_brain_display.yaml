@@ -61,6 +61,28 @@ globals:
     restore_value: true
     initial_value: '0'
 
+  # Modo de visualización: 0 = Pendientes Simpli, 1 = Galería de Imágenes
+  # restore_value: false garantiza que al reiniciar vuelva siempre a Pendientes Simpli
+  - id: display_mode
+    type: int
+    restore_value: false
+    initial_value: '0'
+
+  - id: gallery_index
+    type: int
+    restore_value: false
+    initial_value: '0'
+
+  - id: gallery_count
+    type: int
+    restore_value: false
+    initial_value: '2'
+
+  - id: combo_active
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+
 sensor:
   - platform: sht4x
     temperature:
@@ -126,11 +148,40 @@ image:
         - logger.log: "Error descargando imagen desde el backend"
 
 script:
+  - id: toggle_display_mode
+    then:
+      - lambda: |-
+          id(combo_active) = true;
+          id(display_mode) = (id(display_mode) == 0) ? 1 : 0;
+          ESP_LOGI("mode", "Cambiando modo a: %s", (id(display_mode) == 0 ? "PENDIENTES" : "GALERIA"));
+      # Doble tono confirmatorio de cambio de modo
+      - light.turn_on:
+          id: buzzer_tone
+          brightness: 40%
+      - delay: 60ms
+      - light.turn_off:
+          id: buzzer_tone
+      - delay: 60ms
+      - light.turn_on:
+          id: buzzer_tone
+          brightness: 60%
+      - delay: 100ms
+      - light.turn_off:
+          id: buzzer_tone
+      - script.execute: fetch_view
+
   - id: fetch_view
     then:
       - lambda: |-
-          const char* views[] = {"resumen", "alta", "media", "baja", "clientes"};
-          std::string url = std::string("http://192.168.4.36:8088/render?view=") + views[id(view_index)];
+          std::string url;
+          if (id(display_mode) == 0) {
+            // Modo Pendientes Simpli
+            const char* views[] = {"resumen", "alta", "media", "baja", "clientes"};
+            url = std::string("http://192.168.4.36:8088/render?view=") + views[id(view_index)];
+          } else {
+            // Modo Galería de Imágenes (Árbol genealógico Cien años de soledad)
+            url = std::string("http://192.168.4.36:8088/render?mode=galeria&idx=") + esphome::to_string(id(gallery_index));
+          }
           if (!isnan(id(battery_voltage).state)) {
             url += "&vbat=" + esphome::to_string(id(battery_voltage).state);
           }
@@ -140,7 +191,8 @@ script:
           if (!isnan(id(room_hum).state)) {
             url += "&hum=" + esphome::to_string(id(room_hum).state);
           }
-          ESP_LOGI("second_brain", "Solicitando vista: %s", url.c_str());
+          ESP_LOGI("second_brain", "Solicitando imagen (%s): %s",
+                   (id(display_mode) == 0 ? "Pendientes" : "Galería"), url.c_str());
           id(sb_view_image).set_url(url);
           id(sb_view_image).update();
 
@@ -160,24 +212,36 @@ time:
         hours: 8
         days_of_week: MON-FRI
         then:
-          - logger.log: "Refresco programado (08:45 Lun-Vie)"
-          - script.execute: fetch_view
+          - if:
+              condition:
+                lambda: 'return id(display_mode) == 0;'
+              then:
+                - logger.log: "Refresco programado (08:45 Lun-Vie)"
+                - script.execute: fetch_view
       # 2) Cada 15 minutos entre 09:00 y 18:45 de Lunes a Viernes
       - seconds: 0
         minutes: /15
         hours: 9-18
         days_of_week: MON-FRI
         then:
-          - logger.log: "Refresco programado (09:00-18:45 Lun-Vie cada 15 min)"
-          - script.execute: fetch_view
+          - if:
+              condition:
+                lambda: 'return id(display_mode) == 0;'
+              then:
+                - logger.log: "Refresco programado (09:00-18:45 Lun-Vie cada 15 min)"
+                - script.execute: fetch_view
       # 3) A las 19:00 de Lunes a Viernes (último refresco del horario laboral)
       - seconds: 0
         minutes: 0
         hours: 19
         days_of_week: MON-FRI
         then:
-          - logger.log: "Refresco programado de cierre (19:00 Lun-Vie)"
-          - script.execute: fetch_view
+          - if:
+              condition:
+                lambda: 'return id(display_mode) == 0;'
+              then:
+                - logger.log: "Refresco programado de cierre (19:00 Lun-Vie)"
+                - script.execute: fetch_view
 
 # Pantalla E Ink Spectra 6 (800x480)
 display:
@@ -189,7 +253,7 @@ display:
       it.image(0, 0, id(sb_view_image));
 
 binary_sensor:
-  # Botón Verde (KEY0 / GPIO3): Forzar refresco inmediato
+  # Botón Verde (KEY0 / GPIO3): Forzar refresco inmediato de la vista o imagen actual
   - platform: gpio
     pin:
       number: GPIO3
@@ -207,42 +271,86 @@ binary_sensor:
             id: buzzer_tone
         - script.execute: fetch_view
 
-  # Botón Físico Izquierdo (Visto de frente: GPIO5 / KEY2): Vista Anterior
+  # Botón Físico Izquierdo (Visto de frente: GPIO5 / KEY2)
   - platform: gpio
     pin:
       number: GPIO5
       mode: INPUT_PULLUP
       inverted: true
     id: btn_prev
-    name: "Vista Anterior (Botón Izquierdo)"
+    name: "Botón Izquierdo"
     on_press:
       then:
-        - light.turn_on:
-            id: buzzer_tone
-            brightness: 30%
-        - delay: 40ms
-        - light.turn_off:
-            id: buzzer_tone
+        - delay: 60ms # Ventana de tiempo para detectar combo si se aprietan ambos
         - lambda: |-
-            id(view_index) = (id(view_index) - 1 + 5) % 5;
-        - script.execute: fetch_view
+            if (id(combo_active)) {
+              return;
+            }
+            if (id(btn_next).state) {
+              id(toggle_display_mode).execute();
+              return;
+            }
+            if (id(display_mode) == 0) {
+              id(view_index) = (id(view_index) - 1 + 5) % 5;
+            } else {
+              id(gallery_index) = (id(gallery_index) - 1 + id(gallery_count)) % id(gallery_count);
+            }
+        - if:
+            condition:
+              lambda: 'return !id(combo_active);'
+            then:
+              - light.turn_on:
+                  id: buzzer_tone
+                  brightness: 30%
+              - delay: 40ms
+              - light.turn_off:
+                  id: buzzer_tone
+              - script.execute: fetch_view
+    on_release:
+      then:
+        - lambda: |-
+            if (!id(btn_prev).state && !id(btn_next).state) {
+              id(combo_active) = false;
+            }
 
-  # Botón Físico Derecho (Visto de frente: GPIO4 / KEY1): Vista Siguiente
+  # Botón Físico Derecho (Visto de frente: GPIO4 / KEY1)
   - platform: gpio
     pin:
       number: GPIO4
       mode: INPUT_PULLUP
       inverted: true
     id: btn_next
-    name: "Vista Siguiente (Botón Derecho)"
+    name: "Botón Derecho"
     on_press:
       then:
-        - light.turn_on:
-            id: buzzer_tone
-            brightness: 30%
-        - delay: 40ms
-        - light.turn_off:
-            id: buzzer_tone
+        - delay: 60ms # Ventana de tiempo para detectar combo
         - lambda: |-
-            id(view_index) = (id(view_index) + 1) % 5;
-        - script.execute: fetch_view
+            if (id(combo_active)) {
+              return;
+            }
+            if (id(btn_prev).state) {
+              id(toggle_display_mode).execute();
+              return;
+            }
+            if (id(display_mode) == 0) {
+              id(view_index) = (id(view_index) + 1) % 5;
+            } else {
+              id(gallery_index) = (id(gallery_index) + 1) % id(gallery_count);
+            }
+        - if:
+            condition:
+              lambda: 'return !id(combo_active);'
+            then:
+              - light.turn_on:
+                  id: buzzer_tone
+                  brightness: 30%
+              - delay: 40ms
+              - light.turn_off:
+                  id: buzzer_tone
+              - script.execute: fetch_view
+    on_release:
+      then:
+        - lambda: |-
+            if (!id(btn_prev).state && !id(btn_next).state) {
+              id(combo_active) = false;
+            }

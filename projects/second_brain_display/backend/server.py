@@ -37,13 +37,33 @@ GLOBAL_TELEMETRY: dict[str, Any] = {
     "pct": 95,
     "temp": 26.6,
     "hum": 48.0,
+    "client_ip": None,
     "updated_at": "2026-11-10 17:49:00",
 }
 
+GALLERY_DIR = CURRENT_DIR / "gallery"
 
-def update_telemetry(params: dict):
+
+def get_gallery_images() -> list[Path]:
+    GALLERY_DIR.mkdir(parents=True, exist_ok=True)
+    images = sorted([p for p in GALLERY_DIR.glob("*.png")])
+    if not images:
+        try:
+            from generate_cien_anos_tree import generate_tree_image
+            target = GALLERY_DIR / "01_cien_anos_arbol.png"
+            generate_tree_image(target)
+            images = [target]
+        except Exception as e:
+            logging.error(f"Error auto-generando árbol genealógico: {e}")
+    return images
+
+
+def update_telemetry(params: dict, client_ip: str | None = None):
     updated = False
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if client_ip:
+        GLOBAL_TELEMETRY["client_ip"] = client_ip
+        updated = True
     if "vbat" in params:
         try:
             v = float(params["vbat"][0])
@@ -76,6 +96,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if path in ("/api/pendientes", "/api/data"):
             self.send_json_response(params)
+        elif path in ("/api/gallery", "/api/galeria"):
+            self.send_gallery_json()
         elif path == "/render":
             self.send_image_response(params)
         elif path.startswith("/previews/"):
@@ -92,7 +114,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def send_json_response(self, params: dict):
         try:
-            update_telemetry(params)
+            update_telemetry(params, self.client_address[0])
             data = get_pendientes_data()
             data["telemetria"] = GLOBAL_TELEMETRY
             view = params.get("view", [None])[0]
@@ -113,10 +135,55 @@ class Handler(BaseHTTPRequestHandler):
             logging.error(f"Error generando JSON: {e}")
             self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(e))
 
+    def send_gallery_json(self):
+        try:
+            images = get_gallery_images()
+            payload = {
+                "total": len(images),
+                "images": [p.name for p in images],
+                "telemetria": GLOBAL_TELEMETRY,
+            }
+            resp_bytes = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(resp_bytes)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(resp_bytes)
+        except Exception as e:
+            logging.error(f"Error generando JSON de galería: {e}")
+            self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(e))
+
     def send_image_response(self, params: dict):
         try:
+            update_telemetry(params, self.client_address[0])
+            mode = params.get("mode", ["pendientes"])[0].lower()
+
+            # Modo Galería de Imágenes
+            if mode in ("galeria", "gallery"):
+                images = get_gallery_images()
+                if not images:
+                    self.send_error(HTTPStatus.NOT_FOUND, "No hay imágenes en la galería")
+                    return
+                try:
+                    idx = int(params.get("idx", ["0"])[0])
+                except (ValueError, TypeError):
+                    idx = 0
+                idx = idx % len(images)
+                target_img_path = images[idx]
+                with open(target_img_path, "rb") as f:
+                    img_bytes = f.read()
+
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(img_bytes)))
+                self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+                self.end_headers()
+                self.wfile.write(img_bytes)
+                return
+
+            # Modo Pendientes de Simpli habitual
             view = params.get("view", ["resumen"])[0]
-            update_telemetry(params)
             data = get_pendientes_data()
             img = render_view(view, data, telemetry=GLOBAL_TELEMETRY)
 
@@ -178,6 +245,8 @@ class Handler(BaseHTTPRequestHandler):
         <a class="btn" href="#" onclick="loadView('media', this)">[3/5] Media Prioridad</a>
         <a class="btn" href="#" onclick="loadView('baja', this)">[4/5] Baja Prioridad</a>
         <a class="btn" href="#" onclick="loadView('clientes', this)">[5/5] Por Cliente</a>
+        <a class="btn" style="border-color: #f59e0b; color: #fbbf24;" href="#" onclick="loadGallery(0, this)">🖼️ [Galería 1/2] Árbol Buendía</a>
+        <a class="btn" style="border-color: #10b981; color: #34d399;" href="#" onclick="loadGallery(1, this)">🐱 [Galería 2/2] Gatito</a>
         <a class="btn" href="/api/pendientes" target="_blank">Ver JSON API 🔗</a>
     </div>
 
@@ -186,8 +255,9 @@ class Handler(BaseHTTPRequestHandler):
     </div>
 
     <div class="info-panel">
-        <p>• <strong>Endpoint de Imagen para reTerminal</strong>: <code>http://&lt;IP_DE_LA_PI&gt;:8088/render?view=resumen</code></p>
-        <p>• <strong>Endpoint de JSON</strong>: <code>http://&lt;IP_DE_LA_PI&gt;:8088/api/pendientes</code></p>
+        <p>• <strong>Endpoint de Pendientes</strong>: <code>http://&lt;IP_DE_LA_PI&gt;:8088/render?view=resumen</code></p>
+        <p>• <strong>Endpoint de Galería</strong>: <code>http://&lt;IP_DE_LA_PI&gt;:8088/render?mode=galeria&idx=0</code></p>
+        <p>• <strong>Atajo de Botones en reTerminal</strong>: Presionar <strong>Izquierdo + Derecho juntos</strong> conmuta entre Pendientes y Galería.</p>
     </div>
 
     <script>
@@ -196,6 +266,12 @@ class Handler(BaseHTTPRequestHandler):
             if (el) el.classList.add('active');
             const img = document.getElementById('previewImg');
             img.src = '/render?view=' + view + '&t=' + Date.now();
+        }
+        function loadGallery(idx, el) {
+            document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+            if (el) el.classList.add('active');
+            const img = document.getElementById('previewImg');
+            img.src = '/render?mode=galeria&idx=' + idx + '&t=' + Date.now();
         }
     </script>
 </body>
@@ -208,7 +284,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(resp_bytes)
 
     def log_message(self, format, *args):
-        logging.info("%s - - [%s] %s" % (self.client_address[0], self.log_date_time_string(), format % args))
+        msg = "%s - - [%s] %s" % (self.client_address[0], self.log_date_time_string(), format % args)
+        logging.info(msg)
+        sys.stdout.flush()
 
 
 def run_server():

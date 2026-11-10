@@ -8,6 +8,6 @@ if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
     exit 0
 fi
 
-nohup "$PYTHON" "$DIR/projects/second_brain_display/backend/server.py" > "$DIR/projects/second_brain_display/backend/server.log" 2>&1 &
+nohup "$PYTHON" -u "$DIR/projects/second_brain_display/backend/server.py" > "$DIR/projects/second_brain_display/backend/server.log" 2>&1 &
 echo $! > "$PIDFILE"
 echo "Servidor Second Brain Display iniciado con PID $(cat "$PIDFILE") en el puerto 8088"
