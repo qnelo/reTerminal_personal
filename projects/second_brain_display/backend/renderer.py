@@ -133,11 +133,8 @@ def draw_base_layout(view_title: str, page_indicator: str, timestamp_str: str, t
     footer_left = "◄ Izq: Anterior   |   Der: Siguiente ►   |   Sync: Verde"
     draw.text((16, 457), footer_left, fill=COLOR_WHITE, font=FONT_FOOTER)
 
-    # Detalle de telemetría a la derecha del footer
+    # Detalle de telemetría a la derecha del footer (solo temperatura y humedad)
     telem_parts = []
-    if vbat_val is not None:
-        pct = voltage_to_percentage(vbat_val)
-        telem_parts.append(f"Batería: {pct}%")
     if temp_val is not None:
         telem_parts.append(f"{temp_val:.1f}°C")
     if hum_val is not None:
@@ -146,7 +143,7 @@ def draw_base_layout(view_title: str, page_indicator: str, timestamp_str: str, t
     if telem_parts:
         footer_right = "  •  ".join(telem_parts)
     else:
-        footer_right = "Refresco: 15 min"
+        footer_right = "Refresco: Lun-Vie 8:45 - 19:00"
 
     bbox_fr = draw.textbbox((0, 0), footer_right, font=FONT_FOOTER)
     draw.text((800 - (bbox_fr[2] - bbox_fr[0]) - 16, 457), footer_right, fill=COLOR_WHITE, font=FONT_FOOTER)
