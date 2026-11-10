@@ -21,13 +21,51 @@ CURRENT_DIR = Path(__file__).resolve().parent
 if str(CURRENT_DIR) not in sys.path:
     sys.path.insert(0, str(CURRENT_DIR))
 
+from datetime import datetime
+from typing import Any
+
 from data_provider import get_pendientes_data
-from renderer import render_view
+from renderer import render_view, voltage_to_percentage
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 PORT = int(os.environ.get("PORT", "8088"))
 HOST = "0.0.0.0"
+
+GLOBAL_TELEMETRY: dict[str, Any] = {
+    "vbat": 4.11,
+    "pct": 95,
+    "temp": 26.6,
+    "hum": 48.0,
+    "updated_at": "2026-11-10 17:49:00",
+}
+
+
+def update_telemetry(params: dict):
+    updated = False
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if "vbat" in params:
+        try:
+            v = float(params["vbat"][0])
+            GLOBAL_TELEMETRY["vbat"] = v
+            GLOBAL_TELEMETRY["pct"] = voltage_to_percentage(v)
+            updated = True
+        except (ValueError, TypeError):
+            pass
+    if "temp" in params:
+        try:
+            GLOBAL_TELEMETRY["temp"] = float(params["temp"][0])
+            updated = True
+        except (ValueError, TypeError):
+            pass
+    if "hum" in params:
+        try:
+            GLOBAL_TELEMETRY["hum"] = float(params["hum"][0])
+            updated = True
+        except (ValueError, TypeError):
+            pass
+    if updated:
+        GLOBAL_TELEMETRY["updated_at"] = now_str
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -54,10 +92,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def send_json_response(self, params: dict):
         try:
+            update_telemetry(params)
             data = get_pendientes_data()
+            data["telemetria"] = GLOBAL_TELEMETRY
             view = params.get("view", [None])[0]
             if view and view in data.get("vistas", {}):
                 payload = data["vistas"][view]
+                payload["telemetria"] = GLOBAL_TELEMETRY
             else:
                 payload = data
 
@@ -75,8 +116,9 @@ class Handler(BaseHTTPRequestHandler):
     def send_image_response(self, params: dict):
         try:
             view = params.get("view", ["resumen"])[0]
+            update_telemetry(params)
             data = get_pendientes_data()
-            img = render_view(view, data)
+            img = render_view(view, data, telemetry=GLOBAL_TELEMETRY)
 
             buf = io.BytesIO()
             img.save(buf, format="PNG", optimize=True)

@@ -65,31 +65,98 @@ def truncate_text(draw: ImageDraw.ImageDraw, text: str, max_width: int, font: Im
     return text
 
 
-def draw_base_layout(view_title: str, page_indicator: str, timestamp_str: str) -> tuple[Image.Image, ImageDraw.ImageDraw]:
+def voltage_to_percentage(v: float) -> int:
+    """Calcula el porcentaje de carga aproximado de una batería Li-ion (3.4V a 4.2V)."""
+    if v >= 4.20:
+        return 100
+    if v <= 3.40:
+        return 0
+    points = [
+        (4.20, 100),
+        (4.05, 90),
+        (3.95, 75),
+        (3.85, 60),
+        (3.75, 40),
+        (3.65, 20),
+        (3.50, 10),
+        (3.40, 0),
+    ]
+    for i in range(len(points) - 1):
+        v_high, p_high = points[i]
+        v_low, p_low = points[i + 1]
+        if v >= v_low:
+            pct = p_low + (v - v_low) / (v_high - v_low) * (p_high - p_low)
+            return int(round(pct))
+    return 0
+
+
+def draw_base_layout(view_title: str, page_indicator: str, timestamp_str: str, telemetry: dict[str, Any] | None = None) -> tuple[Image.Image, ImageDraw.ImageDraw]:
     img = Image.new("RGB", (800, 480), COLOR_WHITE)
     draw = ImageDraw.Draw(img)
+
+    vbat_val = None
+    if telemetry and telemetry.get("vbat") is not None:
+        try:
+            vbat_val = float(telemetry["vbat"])
+        except (ValueError, TypeError):
+            pass
+
+    temp_val = None
+    if telemetry and telemetry.get("temp") is not None:
+        try:
+            temp_val = float(telemetry["temp"])
+        except (ValueError, TypeError):
+            pass
+
+    hum_val = None
+    if telemetry and telemetry.get("hum") is not None:
+        try:
+            hum_val = float(telemetry["hum"])
+        except (ValueError, TypeError):
+            pass
 
     # 1. Header superior (46 px)
     draw.rectangle((0, 0, 800, 46), fill=COLOR_BLUE)
     draw.text((16, 12), "SIMPLIROUTE SECOND BRAIN", fill=COLOR_WHITE, font=FONT_HEADER)
     
-    right_info = f"{view_title.upper()}  [{page_indicator}]  •  {timestamp_str}"
+    bat_header_str = ""
+    if vbat_val is not None:
+        bat_pct = voltage_to_percentage(vbat_val)
+        bat_header_str = f"  •  BAT {bat_pct}%"
+
+    right_info = f"{view_title.upper()}  [{page_indicator}]  •  {timestamp_str}{bat_header_str}"
     bbox_r = draw.textbbox((0, 0), right_info, font=FONT_BADGE)
     draw.text((800 - (bbox_r[2] - bbox_r[0]) - 16, 15), right_info, fill=COLOR_WHITE, font=FONT_BADGE)
 
-    # 2. Footer inferior (30 px)
+    # 2. Footer inferior (28 px)
     draw.rectangle((0, 452, 800, 480), fill=COLOR_BLACK)
-    footer_text = "KEY1: Anterior  |  KEY2: Siguiente  |  KEY0: Sincronizar  •  Refresco: 15 min"
-    bbox_f = draw.textbbox((0, 0), footer_text, font=FONT_FOOTER)
-    fx = (800 - (bbox_f[2] - bbox_f[0])) // 2
-    draw.text((fx, 457), footer_text, fill=COLOR_WHITE, font=FONT_FOOTER)
+    footer_left = "◄ Izq: Anterior   |   Der: Siguiente ►   |   Sync: Verde"
+    draw.text((16, 457), footer_left, fill=COLOR_WHITE, font=FONT_FOOTER)
+
+    # Detalle de telemetría a la derecha del footer
+    telem_parts = []
+    if vbat_val is not None:
+        pct = voltage_to_percentage(vbat_val)
+        telem_parts.append(f"Batería: {pct}%")
+    if temp_val is not None:
+        telem_parts.append(f"{temp_val:.1f}°C")
+    if hum_val is not None:
+        telem_parts.append(f"{hum_val:.0f}% RH")
+
+    if telem_parts:
+        footer_right = "  •  ".join(telem_parts)
+    else:
+        footer_right = "Refresco: 15 min"
+
+    bbox_fr = draw.textbbox((0, 0), footer_right, font=FONT_FOOTER)
+    draw.text((800 - (bbox_fr[2] - bbox_fr[0]) - 16, 457), footer_right, fill=COLOR_WHITE, font=FONT_FOOTER)
 
     return img, draw
 
 
-def render_view_resumen(data: dict[str, Any]) -> Image.Image:
+def render_view_resumen(data: dict[str, Any], telemetry: dict[str, Any] | None = None) -> Image.Image:
     v = data["vistas"]["resumen"]
-    img, draw = draw_base_layout("Resumen", "1/5", data["hora_corta"])
+    img, draw = draw_base_layout("Resumen", "1/5", data["hora_corta"], telemetry=telemetry)
 
     # 3 Cajas KPI de Resumen
     kpis = [
@@ -135,9 +202,9 @@ def render_view_resumen(data: dict[str, Any]) -> Image.Image:
     return img
 
 
-def render_view_list(data: dict[str, Any], view_key: str, view_num: str) -> Image.Image:
+def render_view_list(data: dict[str, Any], view_key: str, view_num: str, telemetry: dict[str, Any] | None = None) -> Image.Image:
     v = data["vistas"][view_key]
-    img, draw = draw_base_layout(v["titulo"], view_num, data["hora_corta"])
+    img, draw = draw_base_layout(v["titulo"], view_num, data["hora_corta"], telemetry=telemetry)
 
     total = v["total"]
     draw.text((16, 56), f"{v['titulo'].upper()}  ({total} PENDIENTES)", fill=COLOR_BLACK, font=FONT_SECTION)
@@ -168,9 +235,9 @@ def render_view_list(data: dict[str, Any], view_key: str, view_num: str) -> Imag
     return img
 
 
-def render_view_clientes(data: dict[str, Any]) -> Image.Image:
+def render_view_clientes(data: dict[str, Any], telemetry: dict[str, Any] | None = None) -> Image.Image:
     v = data["vistas"]["clientes"]
-    img, draw = draw_base_layout("Por Cliente", "5/5", data["hora_corta"])
+    img, draw = draw_base_layout("Por Cliente", "5/5", data["hora_corta"], telemetry=telemetry)
 
     draw.text((16, 56), f"PENDIENTES AGRUPADOS POR CUENTA Y CLIENTE ({v['total_clientes']} CLIENTES)", fill=COLOR_BLACK, font=FONT_SECTION)
     draw.line((16, 82, 784, 82), fill=COLOR_CARD_BORDER, width=1)
@@ -200,19 +267,19 @@ def render_view_clientes(data: dict[str, Any]) -> Image.Image:
     return img
 
 
-def render_view(view_name: str, data: dict[str, Any]) -> Image.Image:
+def render_view(view_name: str, data: dict[str, Any], telemetry: dict[str, Any] | None = None) -> Image.Image:
     if view_name == "resumen":
-        return render_view_resumen(data)
+        return render_view_resumen(data, telemetry=telemetry)
     elif view_name == "alta":
-        return render_view_list(data, "alta", "2/5")
+        return render_view_list(data, "alta", "2/5", telemetry=telemetry)
     elif view_name == "media":
-        return render_view_list(data, "media", "3/5")
+        return render_view_list(data, "media", "3/5", telemetry=telemetry)
     elif view_name == "baja":
-        return render_view_list(data, "baja", "4/5")
+        return render_view_list(data, "baja", "4/5", telemetry=telemetry)
     elif view_name == "clientes":
-        return render_view_clientes(data)
+        return render_view_clientes(data, telemetry=telemetry)
     else:
-        return render_view_resumen(data)
+        return render_view_resumen(data, telemetry=telemetry)
 
 
 if __name__ == "__main__":
