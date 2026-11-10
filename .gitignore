@@ -6,13 +6,13 @@
 *.env
 *.env.local
 
-# Python cache
-__pycache__/
-*.py[cod]
-*$py.class
+# Python virtual environment and cache
 .venv/
 venv/
 env/
+__pycache__/
+*.py[cod]
+*$py.class
 
 # ESPHome build artifacts
 .esphome/
@@ -25,7 +25,7 @@ esphome/.esphome/
 tmp/
 temp/
 
-# Large backup flash dumps (avoid accidental huge git commits)
-firmware/backup/
+# Large uncompressed raw flash backups (keep compressed .bin.gz)
+firmware/backup/*.bin
 *.bak
 *.dump
