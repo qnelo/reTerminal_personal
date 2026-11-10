@@ -117,7 +117,7 @@ def draw_base_layout(view_title: str, page_indicator: str, timestamp_str: str, t
 
     # 1. Header superior (46 px)
     draw.rectangle((0, 0, 800, 46), fill=COLOR_BLUE)
-    draw.text((16, 12), "SIMPLIROUTE SECOND BRAIN", fill=COLOR_WHITE, font=FONT_HEADER)
+    draw.text((16, 12), "Pendientes Simpli", fill=COLOR_WHITE, font=FONT_HEADER)
     
     bat_header_str = ""
     if vbat_val is not None:

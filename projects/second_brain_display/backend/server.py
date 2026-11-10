@@ -154,7 +154,7 @@ class Handler(BaseHTTPRequestHandler):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>reTerminal E1002 - Second Brain Display</title>
+    <title>reTerminal E1002 - Pendientes Simpli</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 24px; }
         h1 { color: #38bdf8; margin-bottom: 8px; }
@@ -169,7 +169,7 @@ class Handler(BaseHTTPRequestHandler):
     </style>
 </head>
 <body>
-    <h1>📟 reTerminal E1002 — Second Brain Display</h1>
+    <h1>📟 reTerminal E1002 — Pendientes Simpli</h1>
     <div class="subtitle">Simulador y API en vivo del panel de pendientes para la pantalla E Ink Spectra 6 (800×480)</div>
     
     <div class="nav">
