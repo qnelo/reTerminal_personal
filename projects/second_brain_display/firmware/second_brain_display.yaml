@@ -1,0 +1,183 @@
+esphome:
+  name: reterminal-second-brain
+  friendly_name: "Second Brain E1002"
+  on_boot:
+    priority: 600
+    then:
+      - output.turn_on: bsp_battery_enable
+      - delay: 200ms
+      - component.update: battery_voltage
+      - delay: 500ms
+      # Solicitar la primera imagen al arrancar
+      - lambda: |-
+          id(sb_view_image).update();
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: arduino
+
+# Habilitar 8MB PSRAM Octal para buffers gráficos
+psram:
+  mode: octal
+
+logger:
+  hardware_uart: UART0
+  level: INFO
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "reTerminal-SecondBrain-AP"
+    password: "ChangeMe123"
+
+captive_portal:
+
+# Cliente HTTP para descargar vistas desde la Raspberry Pi
+http_request:
+  id: http_client
+  timeout: 10s
+
+# Bus SPI de la pantalla ePaper
+spi:
+  clk_pin: GPIO7
+  mosi_pin: GPIO9
+
+# Bus I2C para sensor SHT40
+i2c:
+  scl: GPIO20
+  sda: GPIO19
+
+globals:
+  - id: view_index
+    type: int
+    restore_value: true
+    initial_value: '0'
+
+sensor:
+  - platform: sht4x
+    temperature:
+      name: "Temperatura Ambiente"
+      id: room_temp
+    humidity:
+      name: "Humedad Ambiente"
+      id: room_hum
+
+  - platform: adc
+    pin: GPIO1
+    name: "Voltaje Batería"
+    id: battery_voltage
+    update_interval: 60s
+    attenuation: 12db
+    filters:
+      - multiply: 2.0
+
+output:
+  - platform: gpio
+    pin: GPIO6
+    id: bsp_led
+    inverted: true
+
+  - platform: gpio
+    pin: GPIO21
+    id: bsp_battery_enable
+
+  - platform: ledc
+    pin: GPIO45
+    id: buzzer_pwm
+
+light:
+  - platform: binary
+    name: "LED Frontal"
+    output: bsp_led
+    id: status_led
+
+  - platform: monochromatic
+    name: "Zumbador"
+    output: buzzer_pwm
+    id: buzzer_tone
+
+# Descarga de imagen dinámica desde el backend de la Raspberry Pi
+image:
+  - platform: online_image
+    id: sb_view_image
+    url: "http://192.168.4.36:8088/render?view=resumen"
+    format: PNG
+    type: RGB565
+    buffer_size: 65536
+    update_interval: 15min # Refresco automático cada 15 minutos
+    on_download_finished:
+      then:
+        - light.turn_on:
+            id: status_led
+        - delay: 200ms
+        - light.turn_off:
+            id: status_led
+        - component.update: epaper_display
+    on_error:
+      then:
+        - logger.log: "Error descargando imagen desde el backend"
+
+# Pantalla E Ink Spectra 6 (800x480)
+display:
+  - platform: epaper_spi
+    id: epaper_display
+    model: Seeed-reTerminal-E1002
+    update_interval: never # Solo se refresca cuando la imagen termina de descargarse
+    lambda: |-
+      it.image(0, 0, id(sb_view_image));
+
+binary_sensor:
+  # Botón Verde (KEY0 / GPIO3): Forzar refresco inmediato
+  - platform: gpio
+    pin:
+      number: GPIO3
+      mode: INPUT_PULLUP
+      inverted: true
+    id: btn_refresh
+    name: "Sincronizar (KEY0)"
+    on_press:
+      then:
+        - light.turn_on:
+            id: buzzer_tone
+            brightness: 40%
+        - delay: 60ms
+        - light.turn_off:
+            id: buzzer_tone
+        - lambda: |-
+            id(sb_view_image).update();
+
+  # Botón Izquierdo (KEY1 / GPIO4): Vista Anterior
+  - platform: gpio
+    pin:
+      number: GPIO4
+      mode: INPUT_PULLUP
+      inverted: true
+    id: btn_prev
+    name: "Vista Anterior (KEY1)"
+    on_press:
+      then:
+        - lambda: |-
+            const char* views[] = {"resumen", "alta", "media", "baja", "clientes"};
+            id(view_index) = (id(view_index) - 1 + 5) % 5;
+            std::string url = std::string("http://192.168.4.36:8088/render?view=") + views[id(view_index)];
+            id(sb_view_image).set_url(url);
+            id(sb_view_image).update();
+
+  # Botón Derecho (KEY2 / GPIO5): Vista Siguiente
+  - platform: gpio
+    pin:
+      number: GPIO5
+      mode: INPUT_PULLUP
+      inverted: true
+    id: btn_next
+    name: "Vista Siguiente (KEY2)"
+    on_press:
+      then:
+        - lambda: |-
+            const char* views[] = {"resumen", "alta", "media", "baja", "clientes"};
+            id(view_index) = (id(view_index) + 1) % 5;
+            std::string url = std::string("http://192.168.4.36:8088/render?view=") + views[id(view_index)];
+            id(sb_view_image).set_url(url);
+            id(sb_view_image).update();
