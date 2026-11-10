@@ -40,8 +40,8 @@ Basado en el esquemático de hardware oficial (`202004321_reTerminal_E1002_V1_2_
 | **GPIO1** | `ESP_IO1/VBAT_ADC` | Divisor de tensión de batería | Entrada analógica ADC1_CH0 para medir voltaje de la batería |
 | **GPIO2** | `ESP_IO2/ADC1_CH4` | Conector de expansión J2 (Pin 4) | GPIO libre / Entrada analógica ADC1_CH4 |
 | **GPIO3** | `ESP_IO3/KEY0` | Botón verde superior (KEY0) | Botón de encendido / Refresco / Reset de red / Wakeup (Pull-up) |
-| **GPIO4** | `ESP_IO4/KEY1` | Botón blanco superior izquierdo | Navegación (Página anterior) / Wakeup de Deep Sleep |
-| **GPIO5** | `ESP_IO5/KEY2` | Botón blanco superior derecho | Navegación (Página siguiente) (Pull-up) |
+| **GPIO4** | `ESP_IO4/KEY1` | Botón blanco derecho (visto de frente) | Navegación (Página siguiente) / Wakeup de Deep Sleep |
+| **GPIO5** | `ESP_IO5/KEY2` | Botón blanco izquierdo (visto de frente) | Navegación (Página anterior) (Pull-up) |
 | **GPIO6** | `ESP_IO6/LED` | LED verde de estado | Indicador de encendido y estado de firmware (Invertido/Active Low) |
 | **GPIO7** | `ESP_IO7/SCK` | Bus SPI | Reloj SPI (`CLK`) compartido entre Pantalla ePaper y MicroSD |
 | **GPIO8** | `ESP_IO8/MISO` | Bus SPI | Datos de entrada SPI (`MISO`) para tarjeta MicroSD |
