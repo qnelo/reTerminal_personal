@@ -66,27 +66,35 @@ def truncate_text(draw: ImageDraw.ImageDraw, text: str, max_width: int, font: Im
 
 
 def voltage_to_percentage(v: float) -> int:
-    """Calcula el porcentaje de carga aproximado de una batería Li-ion (3.4V a 4.2V)."""
-    if v >= 4.20:
+    """
+    Curva de calibración oficial de Seeed Studio para el reTerminal E1002.
+    Compensa la caída del MOSFET de activación (GPIO21) y las tolerancias del divisor
+    resistivo (GPIO1), donde el circuito de carga corta entre 4.10V y 4.15V.
+    """
+    if v >= 4.12:
         return 100
-    if v <= 3.40:
+    if v <= 3.27:
         return 0
     points = [
-        (4.20, 100),
-        (4.05, 90),
-        (3.95, 75),
-        (3.85, 60),
-        (3.75, 40),
-        (3.65, 20),
-        (3.50, 10),
-        (3.40, 0),
+        (4.12, 100),
+        (3.96, 90),
+        (3.91, 80),
+        (3.85, 70),
+        (3.80, 60),
+        (3.75, 50),
+        (3.68, 40),
+        (3.58, 30),
+        (3.49, 20),
+        (3.41, 10),
+        (3.30, 5),
+        (3.27, 0),
     ]
     for i in range(len(points) - 1):
         v_high, p_high = points[i]
         v_low, p_low = points[i + 1]
         if v >= v_low:
             pct = p_low + (v - v_low) / (v_high - v_low) * (p_high - p_low)
-            return int(round(pct))
+            return min(100, max(0, int(round(pct))))
     return 0
 
 
