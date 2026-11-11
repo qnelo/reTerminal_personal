@@ -43,6 +43,8 @@ im_opt.save(dest_path, format="PNG", optimize=True)
 - **Resultado en Lámina 2 (Gatito fotorrealista)**: Reducción de 66 KB a **56.1 KB**.
 - Ambas láminas quedan con holgura por debajo de los 65.536 bytes y se descargan en menos de 200 ms por Wi-Fi.
 
+> ⚠️ **Corrección (2026-11-10):** cuantizar a N colores *arbitrarios* sirve para bajar el peso, pero no para fotos: el panel vuelve a mapear esos colores sin tramar y la foto se colapsa. Ver la [sección 6](#6-el-driver-de-la-pantalla-no-tramea-fotos-que-se-ven-como-manchas).
+
 ---
 
 ## 3. Detección de Doble Botón Simultáneo (Chording) en ESP32-S3
@@ -150,11 +152,61 @@ Como consecuencia:
 
 ---
 
-## 6. Scripts Reutilizables Desarrollados
+## 6. El Driver de la Pantalla No Tramea: Fotos que se Ven como Manchas
+
+### Problema
+La foto del gato negro (Lámina 2) se veía en la vista previa como una foto en 11 tonos, pero en el panel era una silueta negra con dos ojos. La vista previa engañaba: no mostraba lo que hace el driver.
+
+El driver `epaper_spi` de ESPHome (modelo `Seeed-reTerminal-E1002` → `epaper_spi_spectra_e6.cpp` → `colorconv.h::color_to_bwyrgb`) **no tramea**. Fuerza cada píxel RGB565 a una de las 6 tintas con un umbral duro:
+- Si `max(r,g,b) − min(r,g,b) < 50`, el píxel es "gris": luma Rec.601 ≥ 128 → blanco; si no, negro.
+- Si no es gris, se mira qué canales pasan de 128 y se elige la esquina del cubo RGB (amarillo, rojo, verde o azul).
+
+Los 11 grises del PNG cuantizado con median-cut terminaban en **73 % negro sólido y 27 % blanco**, sin trama: el pelaje desaparecía. El propio `colorconv.h` lo advierte: *"For optimum output quality on RGB inputs consider offline color keying/dithering"*.
+
+### Solución: Tramar en el Backend contra las 6 Tintas Exactas
+[`adapt_gallery_image.py`](../projects/second_brain_display/backend/adapt_gallery_image.py) entrega un PNG en modo paleta cuyos colores son **exactamente** `#000 #FFF #FF0 #F00 #0F0 #00F`. Así el umbral del driver queda como identidad y la trama llega intacta al panel.
+1. **Tono antes de tramar** (clave en sujetos oscuros: el 68 % de la foto del gato tenía luma < 80):
+   - `autocontrast(cutoff=1, preserve_tone=True)`.
+   - Curva gamma calculada desde la mediana de la foto: `γ = clamp(log 0.45 / log(mediana/255), 0.4, 1.0)`. Para el gato da 0.48.
+   - Contraste local con `UnsharpMask(radius=40, percent=50)` y detalle fino con `UnsharpMask(radius=1.5, percent=120)`.
+2. **Modos de trama** (`--mode`):
+   - `bn`: Floyd-Steinberg a negro y blanco.
+   - `bayer`: trama ordenada 8×8.
+   - `acento`: `bn` más color solo en zonas saturadas.
+   - `color`: Floyd-Steinberg a las 6 tintas.
+   - `auto`: con saturación HSV media < 40 usa `bn`; si no, `color`.
+3. **Tramar contra las tintas reales y emitir los códigos puros**: el modo `color` cuantiza contra los colores reales (apagados) del panel, aproximados, y después cambia la paleta por los códigos puros. La vista previa del dashboard usa las tintas reales, así se parece a lo que se ve.
+4. **Paleta compacta en el PNG**: solo se escriben las tintas usadas. Con 2 tintas el PNG es de 1 bit por píxel y con hasta 4, de 2 bits. Con la paleta de 6 completa, el modo `acento` pesaba 67.5 KB; compactada, 48.4 KB.
+
+Resultado para el gato (modo `bn`): **39.7 KB**, con pelaje, bigotes y volumen legibles. B/N con trama ordenada pesaba 21.8 KB. Las 6 tintas sobre esta foto pesaban 81–96 KB y además metían ruido azul y rojo en un gato gris.
+
+### Trampas Encontradas
+- **La saturación HSV en sombras es ruido**: `(20,15,10)` da S≈128. Una máscara "zonas saturadas" sin exigir brillo (`V > 80`) llenaba el pelaje negro de puntos azules y rojos.
+- **El realce crea halos de color en los bordes**: la máscara de saturación se calcula sobre la foto *sin* realzar.
+- **No asumir el color "a ojo"**: el iris del gato, que parecía verde-dorado, tiene S≈47/255. Casi gris: no hay color que acentuar.
+- **Los 64 KB no son límite para un PNG.** `buffer_size` no se puede subir (el schema de ESPHome lo limita a 65536), pero tampoco hace falta:
+  - `online_image` descarga por trozos y `PngDecoder::decode` llama a `pngle_feed`, que consume cada trozo apenas llega.
+  - El buffer es solo la ventana de descarga. Solo el JPEG redimensiona el buffer al tamaño total (`online_image.cpp:136`).
+  - Verificado en el panel con un PNG de 124 KB.
+  - El script ahora pone un tope de cordura de 256 KB.
+  - La sección 2 partía de la creencia contraria.
+- **En color, menos realce.** El contraste local y la nitidez fuerte que salvan al gato negro, sumados a +20 % de saturación, convertían un gatito atigrado en ruido amarillo y rojo (y 120 KB). El modo `color` usa solo autocontraste, gamma y nitidez leve.
+- **La trama ordenada en color no sirve:** con 6 tintas posteriza (el pelaje café quedó como manchas amarillas) y aun así pesaba 69 KB.
+
+### Verificado en el Dispositivo (2026-11-11)
+- Un PNG en paleta de **1 bit** (`01_gatito.png`, 40 KB) se decodifica y se pinta bien. Los anteriores eran de 4 bits.
+- Un PNG a color de **124 KB** (`02_gatitos_durmiendo.png`), casi el doble del `buffer_size`, se descarga y se pinta bien. Esto confirma la lectura del código: para PNG, los 64 KB no son límite.
+
+Probado con [`test_adapt_gallery_image.py`](../projects/second_brain_display/backend/test_adapt_gallery_image.py): replica `color_to_bwyrgb` y comprueba que ningún píxel de la salida cambia al pasar por el driver.
+
+---
+
+## 7. Scripts Reutilizables Desarrollados
 
 | Script | Ubicación | Descripción |
 | :--- | :--- | :--- |
 | **`flash_ota.sh`** | [`scripts/flash_ota.sh`](../scripts/flash_ota.sh) | Detecta la IP del reTerminal automáticamente y lanza `esphome run` hacia el dispositivo. |
 | **`generate_cien_anos_tree.py`** | [`backend/generate_cien_anos_tree.py`](../projects/second_brain_display/backend/generate_cien_anos_tree.py) | Generador paramétrico de diagramas genealógicos optimizados para E-Ink Spectra 6. |
-| **`adapt_gallery_image.py`** | [`backend/adapt_gallery_image.py`](../projects/second_brain_display/backend/adapt_gallery_image.py) | Pipeline de encuadre 5:3, realce y tramado de fotos reales para Spectra 6 (<64 KB). |
+| **`adapt_gallery_image.py`** | [`backend/adapt_gallery_image.py`](../projects/second_brain_display/backend/adapt_gallery_image.py) | Encuadre 5:3, tono adaptativo y tramado a las 6 tintas puras (`--mode auto\|bn\|bayer\|acento\|color`, falla si pasa de 64 KB). |
+| **`test_adapt_gallery_image.py`** | [`backend/test_adapt_gallery_image.py`](../projects/second_brain_display/backend/test_adapt_gallery_image.py) | Self-check: la salida no cambia al pasar por la réplica del umbral del driver. |
 | **`start_service.sh`** | [`backend/start_service.sh`](../projects/second_brain_display/backend/start_service.sh) | Inicia el backend con `-u` (unbuffered logging) y gestión automática de PID. |
