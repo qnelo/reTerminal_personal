@@ -45,7 +45,7 @@ Collage de dos fotos de un gatito atigrado, tramado Floyd-Steinberg a las 6 tint
 ![Gatitos durmiendo](backend/previews/gatitos_durmiendo.png)
 
 ### Última lámina: Árbol Genealógico Buendía (*Cien años de soledad*)
-Estructura generacional completa (fundadores, hijos, nietos, bisnietos, tataranietos y fin del linaje), con rasgos y símbolos clave sin spoilers, contornos de 2 px y conectores dobles/discontinuos de alto contraste.
+Póster de seis generaciones con marco ornamental, mariposas amarillas y medallones: negros con centro amarillo para los Buendía de sangre, blancos para quienes llegan a la familia. Muestra solo nombres y relaciones (matrimonio, unión, adopción); llega hasta Aureliano Babilonia y **no revela el desenlace**. Se dibuja con las 6 tintas exactas y texto sin antialias (7 KB).
 ![Árbol Genealógico Buendía](backend/previews/cien_anos_arbol.png)
 
 El orden de la galería es el orden alfabético de los archivos de `backend/gallery/`. El árbol se llama `99_cien_anos_arbol.png` para quedar siempre último.

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Self-check de adapt_gallery_image: la salida ya está en las 6 tintas puras, así que el firmware no re-mapea nada.
+"""Self-check de la galería (fotos adaptadas y árbol Buendía): la salida ya está en las 6 tintas puras, así que el
+firmware no re-mapea nada.
 
 Uso: .venv/bin/python projects/second_brain_display/backend/test_adapt_gallery_image.py
 """
@@ -10,6 +11,7 @@ from pathlib import Path
 from PIL import Image
 
 from adapt_gallery_image import MAX_PNG_BYTES, MODES, PANEL_CODES, adapt_photo
+from generate_cien_anos_tree import generate_tree_image
 
 
 def firmware_color(r: int, g: int, b: int) -> tuple[int, int, int]:
@@ -68,6 +70,14 @@ def main() -> None:
                 if mode == "auto":
                     assert used == ("bn" if name == "gris" else "color"), (name, used)
                 print(f"ok {name:9s} {mode:7s} -> {used:6s} {size:6d} B  {len(colors)} tintas")
+
+        tree = tmp / "arbol.png"
+        generate_tree_image(tree)
+        out = Image.open(tree)
+        colors = {c for _, c in out.convert("RGB").getcolors(16)}
+        assert out.mode == "P" and out.size == (800, 480) and colors <= set(PANEL_CODES), colors
+        assert all(firmware_color(*c) == c for c in colors) and tree.stat().st_size <= MAX_PNG_BYTES
+        print(f"ok árbol Buendía {tree.stat().st_size:6d} B  {len(colors)} tintas")
 
 
 if __name__ == "__main__":

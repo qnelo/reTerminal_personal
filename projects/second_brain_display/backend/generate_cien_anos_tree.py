@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """
 generate_cien_anos_tree.py
-Genera una lámina gráfica panorámica (800x480 px) con el ÁRBOL GENEALÓGICO
-de la familia Buendía (Cien años de soledad), diseñado con estilo de diagrama
-genealógico visual, optimizado para la pantalla ePaper Spectra 6 del reTerminal E1002:
-- Sin footer negro inferior (aprovecha los 480 px de altura completos).
-- Tipografía BOLD grande (10-15 px) con máximo contraste.
-- Cajas con contorno sólido de 2 px y franjas de color saturadas.
-- Conectores gruesos (2-3 px): dobles para matrimonio, discontinuos rojos para romance.
-- Estrictamente SIN SPOILERS.
+Lámina 800x480 con el árbol genealógico de los Buendía (Cien años de soledad) para el Spectra 6
+del reTerminal E1002.
+
+Sin spoilers: solo nombres y relaciones (matrimonio, unión, adopción, descendencia). Llega hasta
+Aureliano Babilonia y no muestra el desenlace. Se dibuja con las 6 tintas exactas y texto sin
+antialias, así el driver de ESPHome (que umbraliza, no tramea) no re-mapea ningún píxel.
 """
 from __future__ import annotations
 
@@ -16,351 +14,177 @@ import math
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
-# Dimensiones exactas pantalla reTerminal E1002
-WIDTH = 800
-HEIGHT = 480
+from adapt_gallery_image import PANEL_CODES, PANEL_INKS, _indices, _palette_image, render
 
-# Paleta oficial Spectra 6 de alto contraste
-COLOR_WHITE = (255, 255, 255)
-COLOR_BLACK = (0, 0, 0)
-COLOR_RED = (220, 38, 38)
-COLOR_BLUE = (30, 58, 138)
-COLOR_GREEN = (22, 101, 52)
-COLOR_AMBER = (180, 83, 9)
-COLOR_SLATE = (30, 41, 59)
-COLOR_CRIMSON = (153, 27, 27)
-
-FONT_PATH_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+WIDTH, HEIGHT = 800, 480
+K, W, Y, R = PANEL_CODES[:4]
+FONT_DIR = Path("/usr/share/fonts/truetype/dejavu")
 
 
-def get_font(size: float) -> ImageFont.FreeTypeFont:
-    try:
-        return ImageFont.truetype(FONT_PATH_BOLD, int(size))
-    except Exception:
-        return ImageFont.load_default()
+def font(size: int, bold: bool = True) -> ImageFont.FreeTypeFont:
+    return ImageFont.truetype(str(FONT_DIR / ("DejaVuSerif-Bold.ttf" if bold else "DejaVuSerif.ttf")), size)
 
 
-F_HEADER_TITLE = get_font(14)
-F_HEADER_LEGEND = get_font(11)
-F_GEN = get_font(11)
-F_NAME_LARGE = get_font(12)
-F_NAME = get_font(11)
-F_NAME_SMALL = get_font(10)
-F_TRAIT_LARGE = get_font(11)
-F_TRAIT = get_font(10)
+# id -> (nombre, generación, x del centro, Buendía de sangre). False = llega a la familia.
+PEOPLE = {
+    "jab": ("José Arcadio\nBuendía", 1, 330, True),
+    "urs": ("Úrsula\nIguarán", 1, 470, True),
+    "reb": ("Rebeca", 2, 95, True),
+    "ja2": ("José Arcadio", 2, 215, True),
+    "pil": ("Pilar\nTernera", 2, 340, False),
+    "cor": ("Coronel\nAureliano", 2, 470, True),
+    "rmo": ("Remedios\nMoscote", 2, 600, False),
+    "ama": ("Amaranta", 2, 725, True),
+    "arc": ("Arcadio", 3, 200, True),
+    "ssp": ("Santa Sofía\nde la Piedad", 3, 330, False),
+    "ajo": ("Aureliano\nJosé", 3, 430, True),
+    "a17": ("Los 17\nAurelianos", 3, 600, True),
+    "rbe": ("Remedios\nla Bella", 4, 95, True),
+    "jas": ("José Arcadio\nSegundo", 4, 215, True),
+    "pet": ("Petra\nCotes", 4, 340, False),
+    "aus": ("Aureliano\nSegundo", 4, 470, True),
+    "fer": ("Fernanda\ndel Carpio", 4, 605, False),
+    "mau": ("Mauricio\nBabilonia", 5, 300, False),
+    "mem": ("Meme", 5, 430, True),
+    "jar": ("José Arcadio", 5, 545, True),
+    "amu": ("Amaranta\nÚrsula", 5, 650, True),
+    "gas": ("Gastón", 5, 752, False),
+    "aub": ("Aureliano\nBabilonia", 6, 365, True),
+}
+# Parejas vecinas en la misma fila: (izquierda, derecha, tipo).
+UNIONS = [
+    ("jab", "urs", "matrimonio"), ("reb", "ja2", "matrimonio"), ("ja2", "pil", "union"),
+    ("pil", "cor", "union"), ("cor", "rmo", "matrimonio"), ("arc", "ssp", "union"),
+    ("pet", "aus", "union"), ("aus", "fer", "matrimonio"), ("mau", "mem", "union"), ("amu", "gas", "matrimonio"),
+]
+# (padres, hijos). Un solo padre = hijos con mujeres que no aparecen (los 17 Aurelianos).
+CHILDREN = [
+    (("jab", "urs"), ["reb", "ja2", "cor", "ama"]), (("ja2", "pil"), ["arc"]), (("pil", "cor"), ["ajo"]),
+    (("cor",), ["a17"]), (("arc", "ssp"), ["rbe", "jas", "aus"]), (("aus", "fer"), ["mem", "jar", "amu"]),
+    (("mau", "mem"), ["aub"]),
+]
+ADOPTED = {"reb"}
+ROW_Y = {g: 92 + (g - 1) * 66 for g in range(1, 7)}
+ROMAN = ["I", "II", "III", "IV", "V", "VI"]
 
 
-def draw_line(
-    draw: ImageDraw.ImageDraw,
-    x1: int | float,
-    y1: int | float,
-    x2: int | float,
-    y2: int | float,
-    color: tuple = COLOR_BLACK,
-    width: int = 2,
-    style: str = "solid",
-):
-    """Dibuja líneas gruesas de alto contraste (sólida, doble o discontinua)."""
+def draw_line(draw: ImageDraw.ImageDraw, x1, y1, x2, y2, color=K, width: int = 1, style: str = "solid"):
+    """Línea sólida, doble (matrimonio), discontinua (unión) o punteada (adopción)."""
     x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
     if style == "solid":
         draw.line([(x1, y1), (x2, y2)], fill=color, width=width)
-    elif style == "double":
-        # Matrimonio: dos líneas paralelas de 2px
-        if y1 == y2:
-            draw.line([(x1, y1 - 2), (x2, y2 - 2)], fill=color, width=width)
-            draw.line([(x1, y1 + 2), (x2, y2 + 2)], fill=color, width=width)
-        else:
-            draw.line([(x1 - 2, y1), (x2 - 2, y2)], fill=color, width=width)
-            draw.line([(x1 + 2, y1), (x2 + 2, y2)], fill=color, width=width)
-    elif style == "dashed":
-        # Romance / Pareja: línea discontinua de alto contraste
-        dist = int(math.hypot(x2 - x1, y2 - y1))
-        if dist == 0:
-            return
-        dx = (x2 - x1) / dist
-        dy = (y2 - y1) / dist
-        dash_len = 7
-        gap_len = 4
-        cur = 0
-        while cur < dist:
-            seg_end = min(cur + dash_len, dist)
-            draw.line(
-                [(x1 + dx * cur, y1 + dy * cur), (x1 + dx * seg_end, y1 + dy * seg_end)],
-                fill=color,
-                width=width,
-            )
-            cur += dash_len + gap_len
-    elif style == "dotted":
-        # Adopción: puntos gruesos
-        dist = int(math.hypot(x2 - x1, y2 - y1))
-        if dist == 0:
-            return
-        dx = (x2 - x1) / dist
-        dy = (y2 - y1) / dist
-        cur = 0
-        while cur <= dist:
-            px, py = int(x1 + dx * cur), int(y1 + dy * cur)
-            draw.rectangle((px - 1, py - 1, px + 1, py + 1), fill=color)
-            cur += 5
+        return
+    if style == "double":
+        off = width + 1
+        draw.line([(x1, y1 - off), (x2, y2 - off)], fill=color, width=width)
+        draw.line([(x1, y1 + off), (x2, y2 + off)], fill=color, width=width)
+        return
+    dist = int(math.hypot(x2 - x1, y2 - y1))
+    if dist == 0:
+        return
+    dx, dy = (x2 - x1) / dist, (y2 - y1) / dist
+    dash, gap = (6, 4) if style == "dashed" else (1, 3)
+    cur = 0
+    while cur <= dist:
+        end = min(cur + dash, dist)
+        draw.line([(x1 + dx * cur, y1 + dy * cur), (x1 + dx * end, y1 + dy * end)], fill=color, width=width)
+        cur += dash + gap
 
 
-def draw_card(
-    draw: ImageDraw.ImageDraw,
-    x: int,
-    y: int,
-    w: int,
-    h: int,
-    name: str,
-    trait: str,
-    header_col: tuple = COLOR_BLUE,
-):
-    """Dibuja una ficha de personaje nítida con contorno negro de 2px y texto BOLD."""
-    x, y, w, h = int(x), int(y), int(w), int(h)
-    hbar_h = 20
-
-    # Fondo blanco puro y contorno exterior de 2px negro
-    draw.rectangle((x, y, x + w, y + h), fill=COLOR_WHITE, outline=COLOR_BLACK, width=2)
-    # Franja superior coloreada
-    draw.rectangle((x + 1, y + 1, x + w - 1, y + hbar_h), fill=header_col)
-    draw.line([(x, y + hbar_h), (x + w, y + hbar_h)], fill=COLOR_BLACK, width=1)
-
-    # Nombre en negrita blanco puro
-    fn = F_NAME
-    if fn.getlength(name) > (w - 8):
-        fn = F_NAME_SMALL
-    draw.text((x + 5, y + 3), name, fill=COLOR_WHITE, font=fn)
-
-    # Rasgo / símbolo en negrita negro puro sobre fondo blanco
-    draw.text((x + 5, y + 23), trait, fill=COLOR_BLACK, font=F_TRAIT)
+def butterfly(draw: ImageDraw.ImageDraw, cx: int, cy: int, s: int, color=Y):
+    """Mariposa amarilla con contorno negro (motivo de la novela, sin spoiler)."""
+    for side in (-1, 1):
+        draw.polygon([(cx, cy), (cx + side * s, cy - s), (cx + side * s * 1.15, cy - s * 0.15)], fill=color, outline=K)
+        draw.polygon([(cx, cy), (cx + side * s * 0.85, cy + s * 0.75), (cx + side * s * 0.3, cy + s * 0.85)],
+                     fill=color, outline=K)
+        draw.line([(cx, cy - s * 0.55), (cx + side * s * 0.35, cy - s * 1.05)], fill=K, width=1)
+    draw.line([(cx, cy - s * 0.55), (cx, cy + s * 0.7)], fill=K, width=2)
 
 
-def draw_large_card(
-    draw: ImageDraw.ImageDraw,
-    x: int,
-    y: int,
-    w: int,
-    h: int,
-    name: str,
-    lines: list[str],
-    header_col: tuple = COLOR_CRIMSON,
-):
-    """Dibuja una ficha amplia para las generaciones finales con múltiples líneas."""
-    x, y, w, h = int(x), int(y), int(w), int(h)
-    hbar_h = 22
-
-    # Fondo blanco puro y contorno exterior de 2px negro
-    draw.rectangle((x, y, x + w, y + h), fill=COLOR_WHITE, outline=COLOR_BLACK, width=2)
-    # Franja de cabecera
-    draw.rectangle((x + 1, y + 1, x + w - 1, y + hbar_h), fill=header_col)
-    draw.line([(x, y + hbar_h), (x + w, y + hbar_h)], fill=COLOR_BLACK, width=1)
-
-    # Nombre
-    draw.text((x + 6, y + 3), name, fill=COLOR_WHITE, font=F_NAME_LARGE)
-
-    # Líneas de descripción en negrita
-    cur_y = y + 26
-    for line in lines:
-        draw.text((x + 6, cur_y), line, fill=COLOR_BLACK, font=F_TRAIT_LARGE)
-        cur_y += 18
+def text_box(draw, x, y, text, fnt):
+    l, t, r, b = draw.multiline_textbbox((x, y), text, font=fnt, anchor="mm", align="center", spacing=1)
+    return l, t, r, b
 
 
-def generate_tree_image(output_path: Path) -> Image.Image:
-    im = Image.new("RGB", (WIDTH, HEIGHT), COLOR_WHITE)
+def draw_connectors(draw, boxes: dict, width: int, union_color, bus_drop: int = 33):
+    """boxes: id -> (izq, arriba, der, abajo, y_enlace). Dibuja parejas, buses de hijos y bajadas."""
+    for a, b, kind in UNIONS:
+        y = boxes[a][4]
+        draw_line(draw, boxes[a][2] + 3, y, boxes[b][0] - 3, y, union_color if kind == "union" else K, width,
+                  "double" if kind == "matrimonio" else "dashed")
+    for parents, kids in CHILDREN:
+        gen = PEOPLE[parents[0]][1]
+        if len(parents) == 2:
+            a, b = boxes[parents[0]], boxes[parents[1]]
+            sx, sy, bus = (a[2] + b[0]) // 2, a[4], ROW_Y[gen] + bus_drop
+        else:  # un solo padre: baja desde su nodo y usa un bus algo más abajo para no fundirse con otro
+            p = boxes[parents[0]]
+            sx, sy, bus = (p[0] + p[2]) // 2, p[3] + 2, ROW_Y[gen] + bus_drop + 7
+        xs = [PEOPLE[k][2] for k in kids]
+        draw_line(draw, sx, sy, sx, bus, K, width)
+        draw_line(draw, min(xs + [sx]), bus, max(xs + [sx]), bus, K, width)
+        for k in kids:
+            draw_line(draw, PEOPLE[k][2], bus, PEOPLE[k][2], boxes[k][1] - 2, K, width,
+                      "dotted" if k in ADOPTED else "solid")
+
+
+def draw_line_legend(draw, x: int, y: int, width: int, union_color, fnt) -> None:
+    for sample, label, color in (("double", "matrimonio", K), ("dashed", "unión", union_color),
+                                 ("dotted", "adopción", K)):
+        draw_line(draw, x, y, x + 22, y, color, width, sample)
+        draw.text((x + 27, y), label, fill=K, font=fnt, anchor="lm")
+        x += 27 + int(draw.textlength(label, font=fnt)) + 16
+
+
+def draw_poster(draw) -> None:
+    """Póster Macondo: marco ornamental, medallones (Buendía de sangre en negro) y mariposas."""
+    draw.rectangle((5, 5, WIDTH - 6, HEIGHT - 6), outline=K, width=3)
+    draw.rectangle((11, 11, WIDTH - 12, HEIGHT - 12), outline=K, width=1)
+    for cx, cy in ((11, 11), (WIDTH - 12, 11), (11, HEIGHT - 12), (WIDTH - 12, HEIGHT - 12)):
+        draw.polygon([(cx, cy - 7), (cx + 7, cy), (cx, cy + 7), (cx - 7, cy)], fill=R, outline=K)
+    draw.text((WIDTH // 2, 26), "Cien años de soledad", fill=K, font=font(24), anchor="mm")
+    draw.text((WIDTH // 2, 49), "— los Buendía de Macondo —", fill=R, font=font(11), anchor="mm")
+    for cx, cy, s in ((180, 26, 11), (620, 22, 9), (645, 40, 6), (40, 440, 9), (60, 455, 6), (760, 60, 7)):
+        butterfly(draw, cx, cy, s)
+    boxes = {}
+    fnt = font(11)
+    for pid, (name, gen, x, blood) in PEOPLE.items():
+        cy = ROW_Y[gen] - 13
+        draw.ellipse((x - 7, cy - 7, x + 7, cy + 7), fill=K if blood else W, outline=K, width=2)
+        if blood:
+            draw.ellipse((x - 2, cy - 2, x + 2, cy + 2), fill=Y)
+        draw.multiline_text((x, ROW_Y[gen] + 7), name, fill=K, font=fnt, anchor="mm", align="center", spacing=0)
+        _, _, _, b = text_box(draw, x, ROW_Y[gen] + 7, name, fnt)
+        boxes[pid] = (x - 8, cy - 8, x + 8, b, cy)
+    draw_connectors(draw, boxes, 2, R, bus_drop=31)
+    for g, y in ROW_Y.items():
+        draw.text((32, y - 6), ROMAN[g - 1], fill=R, font=font(13), anchor="mm")
+    small = font(11, bold=False)
+    draw_line_legend(draw, 492, 446, 2, R, small)
+    draw.ellipse((492, 420, 504, 432), fill=K, outline=K)
+    draw.ellipse((496, 424, 500, 428), fill=Y)
+    draw.text((510, 426), "Buendía", fill=K, font=small, anchor="lm")
+    draw.ellipse((580, 420, 592, 432), fill=W, outline=K, width=2)
+    draw.text((598, 426), "llegan a la familia", fill=K, font=small, anchor="lm")
+
+
+def generate_tree_image(output_path: Path, preview_path: Path | None = None) -> Image.Image:
+    im = Image.new("RGB", (WIDTH, HEIGHT), W)
     draw = ImageDraw.Draw(im)
-
-    # =========================================================================
-    # 1. CABECERA PANORÁMICA (Y: 0 a 28) CON LEYENDA INTEGRADA
-    # =========================================================================
-    draw.rectangle((0, 0, WIDTH, 28), fill=COLOR_BLUE)
-    draw.text(
-        (10, 6),
-        "ÁRBOL GENEALÓGICO DE LA FAMILIA BUENDÍA  •  MACONDO",
-        fill=COLOR_WHITE,
-        font=F_HEADER_TITLE,
-    )
-
-    # Leyenda compacta en la cabecera (sin ocupar espacio inferior)
-    draw.text(
-        (545, 7),
-        "═ Matrimonio   ┅ Romance   ··· Adopción",
-        fill=(254, 240, 138),
-        font=F_HEADER_LEGEND,
-    )
-    draw.line([(0, 28), (WIDTH, 28)], fill=COLOR_BLACK, width=1)
-
-    # =========================================================================
-    # 2. COLUMNA LATERAL DE GENERACIONES (X: 4 a 46)
-    # =========================================================================
-    gen_bands = [
-        ("1ª Gen", 34, 40, COLOR_BLUE),
-        ("2ª Gen", 98, 40, COLOR_GREEN),
-        ("3ª Gen", 164, 40, COLOR_AMBER),
-        ("4ª Gen", 230, 40, COLOR_RED),
-        ("5ª Gen", 296, 40, COLOR_SLATE),
-        ("6ª-7ª", 368, 96, COLOR_CRIMSON),
-    ]
-    for tag, y_pos, h_box, col in gen_bands:
-        draw.rectangle((4, y_pos, 46, y_pos + h_box), fill=col, outline=COLOR_BLACK, width=2)
-        w_t = F_GEN.getlength(tag)
-        draw.text((4 + (42 - w_t) / 2, y_pos + (h_box - 14) / 2), tag, fill=COLOR_WHITE, font=F_GEN)
-
-    # =========================================================================
-    # NIVEL 1: 1ª GENERACIÓN (FUNDADORES) - Y: 34 a 74 (H=40)
-    # =========================================================================
-    draw_card(draw, 200, 34, 185, 40, "José Arcadio Buendía", "Fundador de Macondo", COLOR_BLUE)
-    draw_card(draw, 445, 34, 165, 40, "Úrsula Iguarán", "Matriarca laboriosa", COLOR_BLUE)
-
-    # Enlace matrimonial José Arcadio Buendía ══ Úrsula Iguarán
-    draw_line(draw, 385, 54, 445, 54, width=2, style="double")
-
-    # Tronco de descendencia Gen 1 -> Gen 2
-    draw_line(draw, 415, 54, 415, 86, width=2, style="solid")
-    draw_line(draw, 105, 86, 760, 86, width=2, style="solid")
-    # Ramas hacia Gen 2
-    draw_line(draw, 105, 86, 105, 98, width=2, style="dotted")  # Rebeca (adopción)
-    draw_line(draw, 245, 86, 245, 98, width=2, style="solid")   # José Arcadio
-    draw_line(draw, 545, 86, 545, 98, width=2, style="solid")   # Coronel Aureliano
-    draw_line(draw, 760, 86, 760, 98, width=2, style="solid")   # Amaranta
-
-    # =========================================================================
-    # NIVEL 2: 2ª GENERACIÓN (HIJOS Y PAREJAS) - Y: 98 a 138 (H=40)
-    # =========================================================================
-    draw_card(draw, 55, 98, 100, 40, "Rebeca", "Adoptiva", COLOR_GREEN)
-    draw_card(draw, 175, 98, 145, 40, "José Arcadio", "Fuerza colosal", COLOR_GREEN)
-    draw_card(draw, 340, 98, 115, 40, "Pilar Ternera", "Cartomántica", COLOR_AMBER)
-    draw_card(draw, 475, 98, 150, 40, "Cnel. Aureliano", "Pescaditos de oro", COLOR_GREEN)
-    draw_card(draw, 645, 98, 75, 40, "Remedios", "Moscote", COLOR_GREEN)
-    draw_card(draw, 730, 98, 65, 40, "Amaranta", "Costura", COLOR_GREEN)
-
-    # Conexiones Gen 2
-    draw_line(draw, 155, 118, 175, 118, width=2, style="double")  # Rebeca ══ José Arcadio
-    draw_line(draw, 320, 118, 340, 118, color=COLOR_RED, width=2, style="dashed")  # José Arcadio ┅ Pilar Ternera
-    draw_line(draw, 455, 118, 475, 118, color=COLOR_RED, width=2, style="dashed")  # Pilar Ternera ┅ Cnel. Aureliano
-    draw_line(draw, 625, 118, 645, 118, width=2, style="double")  # Cnel. Aureliano ══ Remedios Moscote
-
-    # Troncos de descendencia Gen 2 -> Gen 3
-    # 1. José Arcadio + Pilar Ternera -> Arcadio
-    draw_line(draw, 330, 118, 330, 151, width=2, style="solid")
-    draw_line(draw, 145, 151, 330, 151, width=2, style="solid")
-    draw_line(draw, 145, 151, 145, 164, width=2, style="solid")
-
-    # 2. Coronel Aureliano + Pilar Ternera -> Aureliano José
-    draw_line(draw, 465, 118, 465, 151, width=2, style="solid")
-    draw_line(draw, 465, 151, 490, 151, width=2, style="solid")
-    draw_line(draw, 490, 151, 490, 164, width=2, style="solid")
-
-    # 3. Coronel Aureliano (campañas) -> Los 17 Aurelianos
-    draw_line(draw, 580, 138, 580, 151, width=2, style="solid")
-    draw_line(draw, 580, 151, 690, 151, width=2, style="solid")
-    draw_line(draw, 690, 151, 690, 164, width=2, style="solid")
-
-    # =========================================================================
-    # NIVEL 3: 3ª GENERACIÓN (NIETOS) - Y: 164 a 204 (H=40)
-    # =========================================================================
-    draw_card(draw, 80, 164, 125, 40, "Arcadio", "Gobernador", COLOR_AMBER)
-    draw_card(draw, 225, 164, 155, 40, "Santa Sofía Piedad", "Madre abnegada", COLOR_AMBER)
-    draw_card(draw, 420, 164, 145, 40, "Aureliano José", "Soldado rebelde", COLOR_AMBER)
-    draw_card(draw, 595, 164, 195, 40, "Los 17 Aurelianos", "Cruz de ceniza", COLOR_AMBER)
-
-    # Conexión Arcadio ══ Santa Sofía
-    draw_line(draw, 205, 184, 225, 184, width=2, style="double")
-
-    # Tronco Gen 3 -> Gen 4 (Hijos de Arcadio + Santa Sofía de la Piedad)
-    draw_line(draw, 215, 184, 215, 217, width=2, style="solid")
-    draw_line(draw, 135, 217, 460, 217, width=2, style="solid")
-    draw_line(draw, 135, 217, 135, 230, width=2, style="solid")  # Remedios la Bella
-    draw_line(draw, 300, 217, 300, 230, width=2, style="solid")  # José Arcadio Segundo
-    draw_line(draw, 460, 217, 460, 230, width=2, style="solid")  # Aureliano Segundo
-
-    # =========================================================================
-    # NIVEL 4: 4ª GENERACIÓN (BISNIETOS) - Y: 230 a 270 (H=40)
-    # =========================================================================
-    draw_card(draw, 60, 230, 150, 40, "Remedios la Bella", "Belleza celestial", COLOR_RED)
-    draw_card(draw, 225, 230, 150, 40, "José Arcadio 2º", "Gemelo • Gallos", COLOR_RED)
-    draw_card(draw, 390, 230, 140, 40, "Aureliano 2º", "Gemelo • Acordeón", COLOR_RED)
-    draw_card(draw, 550, 230, 145, 40, "Fernanda Carpio", "Reina devota", COLOR_RED)
-    draw_card(draw, 710, 230, 85, 40, "Petra Cotes", "Ganado fértil", COLOR_RED)
-
-    # Conexiones Gen 4
-    draw_line(draw, 530, 250, 550, 250, width=2, style="double")  # Aureliano 2º ══ Fernanda
-    draw_line(draw, 695, 250, 710, 250, color=COLOR_RED, width=2, style="dashed")  # Aureliano 2º ┅ Petra Cotes
-
-    # Tronco Gen 4 -> Gen 5 (Hijos de Aureliano 2º + Fernanda)
-    draw_line(draw, 540, 250, 540, 283, width=2, style="solid")
-    draw_line(draw, 135, 283, 645, 283, width=2, style="solid")
-    draw_line(draw, 135, 283, 135, 296, width=2, style="solid")  # José Arcadio
-    draw_line(draw, 295, 283, 295, 296, width=2, style="solid")  # Renata (Meme)
-    draw_line(draw, 645, 283, 645, 296, width=2, style="solid")  # Amaranta Úrsula
-
-    # =========================================================================
-    # NIVEL 5: 5ª GENERACIÓN (TATARANIETOS) - Y: 296 a 336 (H=40)
-    # =========================================================================
-    draw_card(draw, 65, 296, 145, 40, "José Arcadio (Roma)", "Estudios en Roma", COLOR_SLATE)
-    draw_card(draw, 225, 296, 145, 40, "Renata (Meme)", "Clavicordio", COLOR_SLATE)
-    draw_card(draw, 390, 296, 160, 40, "Mauricio Babilonia", "Mariposas amarillas", COLOR_AMBER)
-    draw_card(draw, 575, 296, 145, 40, "Amaranta Úrsula", "Enérgica y vital", COLOR_SLATE)
-    draw_card(draw, 735, 296, 60, 40, "Gastón", "Aviador", COLOR_SLATE)
-
-    # Conexiones Gen 5
-    draw_line(draw, 370, 316, 390, 316, color=COLOR_RED, width=2, style="dashed")  # Meme ┅ Mauricio Babilonia
-    draw_line(draw, 720, 316, 735, 316, width=2, style="double")  # Amaranta Úrsula ══ Gastón
-
-    # Tronco Gen 5 -> Gen 6 (Meme + Mauricio Babilonia -> Aureliano Babilonia)
-    draw_line(draw, 380, 316, 380, 350, width=2, style="solid")
-    draw_line(draw, 280, 350, 380, 350, width=2, style="solid")
-    draw_line(draw, 280, 350, 280, 368, width=2, style="solid")
-
-    # =========================================================================
-    # NIVEL 6 Y 7: 6ª Y 7ª GENERACIÓN (FIN DEL LINAJE) - Y: 368 a 468 (H=96)
-    # =========================================================================
-    draw_large_card(
-        draw,
-        x=140,
-        y=368,
-        w=295,
-        h=96,
-        name="Aureliano Babilonia (6ª Gen)",
-        lines=[
-            "• Sabio ermitaño y lector incansable",
-            "• Descifra los pergaminos de Melquíades",
-            "• Gran amor con Amaranta Úrsula",
-        ],
-        header_col=COLOR_CRIMSON,
-    )
-
-    draw_large_card(
-        draw,
-        x=495,
-        y=368,
-        w=295,
-        h=96,
-        name="El Último Aureliano (7ª Gen)",
-        lines=[
-            "• Hijo de la estirpe y fin del linaje",
-            "• El niño con cola de cerdo",
-            "• Clausura de los cien años de soledad",
-        ],
-        header_col=COLOR_BLACK,
-    )
-
-    # Conexión Amaranta Úrsula (Gen 5) hacia el linaje final
-    draw_line(draw, 645, 336, 645, 355, width=2, style="solid")
-    draw_line(draw, 465, 355, 645, 355, width=2, style="solid")
-    draw_line(draw, 465, 355, 465, 416, width=2, style="solid")
-
-    # Enlace de amor entre Aureliano Babilonia y Amaranta Úrsula hacia El Último Aureliano
-    draw_line(draw, 435, 416, 495, 416, color=COLOR_RED, width=2, style="dashed")
-
-    # Guardar imagen optimizada para Spectra 6 (< 60 KB para buffer ESPHome)
+    draw.fontmode = "1"  # sin antialias: solo tintas puras, nada que el driver tenga que re-mapear
+    draw_poster(draw)
+    indices = _indices(im.quantize(palette=_palette_image(PANEL_CODES), dither=Image.Dither.NONE))
+    out = render(indices, PANEL_CODES)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    im_opt = im.quantize(colors=16)
-    im_opt.save(output_path, format="PNG", optimize=True)
-    return im_opt
+    out.save(output_path, format="PNG", optimize=True)
+    if preview_path:
+        preview_path.parent.mkdir(parents=True, exist_ok=True)
+        render(indices, PANEL_INKS).save(preview_path, format="PNG", optimize=True)
+    return out
 
 
 if __name__ == "__main__":
-    out = Path(__file__).resolve().parent / "gallery" / "99_cien_anos_arbol.png"
-    generate_tree_image(out)
-    prev = Path(__file__).resolve().parent / "previews" / "cien_anos_arbol.png"
-    generate_tree_image(prev)
-    print(f"Lámina del árbol rediseñada y guardada en: {out}")
+    here = Path(__file__).resolve().parent
+    out = here / "gallery" / "99_cien_anos_arbol.png"
+    generate_tree_image(out, here / "previews" / "cien_anos_arbol.png")
+    print(f"Árbol genealógico generado en: {out}")
