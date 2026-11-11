@@ -359,7 +359,7 @@ def generate_tree_image(output_path: Path) -> Image.Image:
 
 
 if __name__ == "__main__":
-    out = Path(__file__).resolve().parent / "gallery" / "01_cien_anos_arbol.png"
+    out = Path(__file__).resolve().parent / "gallery" / "99_cien_anos_arbol.png"
     generate_tree_image(out)
     prev = Path(__file__).resolve().parent / "previews" / "cien_anos_arbol.png"
     generate_tree_image(prev)

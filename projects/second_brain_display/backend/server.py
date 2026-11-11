@@ -50,7 +50,7 @@ def get_gallery_images() -> list[Path]:
     if not images:
         try:
             from generate_cien_anos_tree import generate_tree_image
-            target = GALLERY_DIR / "01_cien_anos_arbol.png"
+            target = GALLERY_DIR / "99_cien_anos_arbol.png"
             generate_tree_image(target)
             images = [target]
         except Exception as e:

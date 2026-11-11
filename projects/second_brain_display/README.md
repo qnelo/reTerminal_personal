@@ -36,13 +36,27 @@ Pendientes organizados jerárquicamente por cliente y cuenta (Falabella, Bidfood
 
 Pulsando **ambos botones blancos a la vez (Izquierdo + Derecho)**, el dispositivo conmuta al **Modo Galería**, permitiendo disfrutar de láminas artísticas e infografías a pantalla completa sin elementos invasivos de interfaz ni barras negras:
 
-### Lámina 1: Árbol Genealógico Buendía (*Cien años de soledad*)
+### Lámina 1: Fotografía Artística (Gatito Panterita)
+Fotografía de gato negro con sombras levantadas (curva gamma calculada desde la propia foto), contraste local en el pelaje y realce de bigotes, tramada Floyd-Steinberg a negro/blanco puros (PNG de 1 bit, 40.3 KB).
+![Gatito](backend/previews/gatito.png)
+
+### Lámina 2: Gatitos Durmiendo (collage a color)
+Collage de dos fotos de un gatito atigrado, tramado Floyd-Steinberg a las 6 tintas con un tratamiento suave (sin contraste local, para que el pelaje no se llene de ruido). Pesa 124 KB; el PNG se descarga en streaming, así que el buffer de 64 KB no lo limita.
+![Gatitos durmiendo](backend/previews/gatitos_durmiendo.png)
+
+### Última lámina: Árbol Genealógico Buendía (*Cien años de soledad*)
 Estructura generacional completa (fundadores, hijos, nietos, bisnietos, tataranietos y fin del linaje), con rasgos y símbolos clave sin spoilers, contornos de 2 px y conectores dobles/discontinuos de alto contraste.
 ![Árbol Genealógico Buendía](backend/previews/cien_anos_arbol.png)
 
-### Lámina 2: Fotografía Artística (Gatito Panterita)
-Fotografía de gato negro en pose loaf, con encuadre completo de orejas y patas de borde a borde sin barras negras, realce de micro-detalles en bigotes y pelaje, ojos en tono verde-dorado y tramado Floyd-Steinberg optimizado en 11 colores (54.1 KB) para no saturar el buffer de 64 KB de ESPHome.
-![Gatito](backend/previews/gatito.png)
+El orden de la galería es el orden alfabético de los archivos de `backend/gallery/`. El árbol se llama `99_cien_anos_arbol.png` para quedar siempre último.
+
+**Agregar una foto a la galería.** El driver `epaper_spi` de ESPHome no tramea: fuerza cada píxel a una de las 6 tintas con un umbral duro. Por eso el script entrega la imagen ya tramada a las tintas puras:
+```bash
+.venv/bin/python projects/second_brain_display/backend/adapt_gallery_image.py FOTO.jpg \
+  projects/second_brain_display/backend/gallery/03_nombre.png --preview projects/second_brain_display/backend/previews/nombre.png \
+  [--mode auto|bn|bayer|acento|color] [--crop x0,y0,x1,y1]
+```
+`auto` usa B/N para las fotos casi grises y las 6 tintas para las coloridas. La vista previa simula las tintas reales del panel.
 
 ---
 
