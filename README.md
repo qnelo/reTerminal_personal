@@ -132,16 +132,19 @@ Consulta la guía completa de ESPHome en [docs/ESPHOME_GUIDE.md](docs/ESPHOME_GU
 
 ## 🌟 Proyectos Destacados
 
-### 1. [Second Brain Display — Pendientes Simpli (reTerminal E1002)](projects/second_brain_display/README.md)
-Visualizador de escritorio Always-On para los pendientes y tareas del segundo cerebro de SimpliRoute:
-- **5 Vistas Navegables (800×480 px)**: Resumen general con KPIs, Alta Prioridad, Media Prioridad, Baja Prioridad y Por Cliente.
-- **Diseño Ultra-Legible para Spectra 6**: Tipografía bold pesada, tarjetas de alto contraste y jerarquía limpia.
+### 1. [Second Brain Display — Pendientes Simpli y Galería (reTerminal E1002)](projects/second_brain_display/README.md)
+Visualizador de escritorio Always-On para los pendientes del segundo cerebro de SimpliRoute con modo alternativo de galería artística:
+- **Modo Dual Interactivo**:
+  - **Modo Pendientes Simpli**: 5 vistas navegables (Resumen con KPIs, Alta Prioridad, Media Prioridad, Baja Prioridad y Por Cliente).
+  - **Modo Galería de Imágenes**: Infografías a pantalla completa (Árbol genealógico de *Cien años de soledad* sin spoilers, fotografías artísticas).
+  - **Conmutación por Atajo Combo**: Presionar ambos botones blancos simultáneamente (`KEY1 + KEY2`) alterna de modo con doble tono de buzzer. Al reiniciar, vuelve siempre a Pendientes.
+- **Diseño Ultra-Legible para Spectra 6**: Tipografía bold pesada, tarjetas de alto contraste y cuantización optimizada a 16 colores (<64 KB).
 - **Backend en Servidor / Raspberry Pi**: Servicio systemd sirviendo imágenes PNG y API JSON con telemetría en tiempo real (puerto :8088).
 - **Firmware ESPHome Inteligente**:
   - Navegación por botones físicos frontales (Izquierdo: anterior, Derecho: siguiente, Verde: sincronizar).
-  - Horario laboral inteligente (SNTP): refresco automático cada 15 min solo **Lunes a Viernes entre 08:45 y 19:00 hrs**.
+  - Horario laboral inteligente (SNTP): refresco automático cada 15 min solo **Lunes a Viernes entre 08:45 y 19:00 hrs** (solo en Modo Pendientes).
   - Telemetría en pantalla: porcentaje de batería en cabecera y temperatura/humedad en pie de página.
-  - Actualizaciones inalámbricas por Wi-Fi (**OTA**).
+  - Actualizaciones inalámbricas por Wi-Fi (**OTA**) con script inteligente de auto-detección de IP.
 
 👉 [Ver documentación completa, capturas y arquitectura del proyecto](projects/second_brain_display/README.md).
 
@@ -157,6 +160,7 @@ Visualizador de escritorio Always-On para los pendientes y tareas del segundo ce
 │   ├── HARDWARE.md                        <- Pinout completo y diseño de hardware
 │   ├── FIRMWARE_GUIDE.md                  <- Guía paso a paso de flasheo y recuperación
 │   ├── ESPHOME_GUIDE.md                   <- Manual de componentes y configuración ESPHome
+│   ├── LESSONS_LEARNED_OTA_AND_FIRMWARE.md<- Lecciones técnicas: buffer 64KB, chording y OTA
 │   ├── LINKS_AND_RESOURCES.md             <- Enlaces consolidados a wikis, 3D y repos
 │   └── pdf/                               <- Documentos PDF oficiales
 │       ├── reTerminal_E_Series_ePaper_Display.pdf
@@ -176,6 +180,7 @@ Visualizador de escritorio Always-On para los pendientes y tareas del segundo ce
 │   ├── flash_stock.sh                     <- Flasheo de firmware de fábrica
 │   ├── flash_photoframe.sh                <- Flasheo de ESP32 PhotoFrame
 │   ├── flash_trmnl.sh                     <- Flasheo de TRMNL
+│   ├── flash_ota.sh                       <- Flasheo OTA inalámbrico con auto-detección IP
 │   └── erase_flash.sh                     <- Borrado completo de memoria
 └── projects/                              <- Proyectos y desarrollos personalizados
     ├── README.md                          <- Banco de ideas y roadmap
@@ -184,8 +189,10 @@ Visualizador de escritorio Always-On para los pendientes y tareas del segundo ce
         ├── backend/                       <- Backend Python en la Raspberry Pi (API y Renderer)
         │   ├── data_provider.py           <- Conector con el Second Brain
         │   ├── renderer.py                <- Motor gráfico Pillow 800x480
+        │   ├── generate_cien_anos_tree.py <- Generador del árbol genealógico
         │   ├── server.py                  <- Servidor HTTP, API y simulador web
-        │   └── previews/                  <- Capturas de las 5 vistas generadas
+        │   ├── gallery/                   <- Imágenes optimizadas de la galería (800x480)
+        │   └── previews/                  <- Capturas de las vistas y galería generadas
         └── firmware/                      <- Firmware ESPHome para reTerminal E1002
             ├── second_brain_display.yaml  <- Configuración completa (Pantalla, Botones, SNTP, OTA)
             └── secrets.yaml.example       <- Plantilla de credenciales Wi-Fi

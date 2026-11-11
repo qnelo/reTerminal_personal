@@ -32,6 +32,20 @@ Pendientes organizados jerárquicamente por cliente y cuenta (Falabella, Bidfood
 
 ---
 
+## 🖼️ Modo Galería de Imágenes (800 × 480 px Full-Bleed)
+
+Pulsando **ambos botones blancos a la vez (Izquierdo + Derecho)**, el dispositivo conmuta al **Modo Galería**, permitiendo disfrutar de láminas artísticas e infografías a pantalla completa sin elementos invasivos de interfaz ni barras negras:
+
+### Lámina 1: Árbol Genealógico Buendía (*Cien años de soledad*)
+Estructura generacional completa (fundadores, hijos, nietos, bisnietos, tataranietos y fin del linaje), con rasgos y símbolos clave sin spoilers, contornos de 2 px y conectores dobles/discontinuos de alto contraste.
+![Árbol Genealógico Buendía](backend/previews/cien_anos_arbol.png)
+
+### Lámina 2: Fotografía Artística (Gatito en Repisa)
+Ilustración fotográfica de alto detalle optimizada con tramado Floyd-Steinberg en 16 colores para la paleta de pigmentos físicos Spectra 6.
+![Gatito](backend/previews/gatito.png)
+
+---
+
 ## 🎨 Principios de Diseño para Pantallas E-Ink Spectra 6
 
 A diferencia de un monitor LCD/OLED, una pantalla electroforética como la **Spectra 6** mueve partículas físicas de pigmento dentro de microcápsulas. Las fuentes delgadas, grises claros o elementos con bajo contraste sufren de desenfoque y "empastado" (*color bleeding*).
@@ -152,9 +166,15 @@ Puedes previsualizar el panel desde cualquier navegador conectado a la red local
 ### 3. Compilación y Flasheo de Firmware
 
 ```bash
-# Flasheo inicial por cable USB
+# Flasheo inicial por cable USB (ej. desde pop-os o Raspberry Pi)
 .venv/bin/esphome run projects/second_brain_display/firmware/second_brain_display.yaml --device /dev/ttyUSB0
 
-# Actualizaciones inalámbricas por Wi-Fi (OTA)
-.venv/bin/esphome run projects/second_brain_display/firmware/second_brain_display.yaml --device <IP_DISPOSITIVO>
+# Flasheo OTA inalámbrico automático (detecta la IP viva por telemetría)
+./scripts/flash_ota.sh
+
+# O flasheo OTA manual indicando IP:
+./scripts/flash_ota.sh --ip <IP_DISPOSITIVO>
 ```
+
+Para consultar los detalles de arquitectura de bajo nivel, el límite de 64 KB de buffer ePaper y el algoritmo de coincidencia de botones, revisa:
+👉 [Bitácora de Lecciones Aprendidas (OTA y Firmware)](../../docs/LESSONS_LEARNED_OTA_AND_FIRMWARE.md).
