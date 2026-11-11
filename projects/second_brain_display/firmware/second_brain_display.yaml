@@ -22,6 +22,7 @@ logger:
   level: INFO
 
 api:
+  reboot_timeout: 0s # Evita reinicios automáticos cada 15 min cuando no hay Home Assistant conectado
 
 ota:
   platform: esphome
@@ -29,14 +30,22 @@ ota:
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
+  reboot_timeout: 0s # Evita reinicios por micro-desconexiones Wi-Fi
+  power_save_mode: NONE # Desactiva el modo sueño del módem para mantener baja latencia y puertos activos
   ap:
     ssid: "reTerminal-SecondBrain-AP"
     password: "ChangeMe123"
   on_connect:
     then:
       - delay: 1s
-      - logger.log: "Wi-Fi conectado, solicitando imagen inicial con telemetría..."
-      - script.execute: fetch_view
+      - logger.log: "Wi-Fi conectado."
+      - if:
+          condition:
+            lambda: 'return !id(boot_synced);'
+          then:
+            - lambda: 'id(boot_synced) = true;'
+            - logger.log: "Primer arranque: solicitando imagen inicial con telemetría..."
+            - script.execute: fetch_view
 
 captive_portal:
 
@@ -56,21 +65,26 @@ i2c:
   sda: GPIO19
 
 globals:
+  - id: boot_synced
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+
   - id: view_index
     type: int
     restore_value: true
     initial_value: '0'
 
   # Modo de visualización: 0 = Pendientes Simpli, 1 = Galería de Imágenes
-  # restore_value: false garantiza que al reiniciar vuelva siempre a Pendientes Simpli
+  # restore_value: true garantiza que se quede en Galería indefinidamente hasta presionar los 2 botones
   - id: display_mode
     type: int
-    restore_value: false
+    restore_value: true
     initial_value: '0'
 
   - id: gallery_index
     type: int
-    restore_value: false
+    restore_value: true
     initial_value: '0'
 
   - id: gallery_count

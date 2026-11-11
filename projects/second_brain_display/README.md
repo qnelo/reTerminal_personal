@@ -115,7 +115,7 @@ flowchart TD
 El archivo de configuración [`firmware/second_brain_display.yaml`](firmware/second_brain_display.yaml) incluye:
 
 1. **Mapeo Físico de Botones (Perspectiva Frontal) y Atajo Combo**:
-   - **Pulsación Simultánea (Izquierdo + Derecho / KEY2 + KEY1)**: Conmuta de modo entre **Pendientes Simpli** y **Galería de Imágenes** con un doble tono confirmatorio y parpadeo LED. Al reiniciar o despertar del deep sleep, el equipo entra por defecto siempre en **Pendientes Simpli**.
+   - **Pulsación Simultánea (Izquierdo + Derecho / KEY2 + KEY1)**: Conmuta de modo entre **Pendientes Simpli** y **Galería de Imágenes** con un doble tono confirmatorio y parpadeo LED. El modo activo y la lámina actual quedan guardados de forma persistente en memoria (`restore_value: true`), garantizando que la imagen elegida permanezca indefinidamente en pantalla hasta que se vuelva a presionar la combinación de botones.
    - **Botón Blanco Izquierdo (`GPIO5 / KEY2`)**: 
      - En *Modo Pendientes*: Retrocede a la vista anterior (`(view_index - 1 + 5) % 5`).
      - En *Modo Galería*: Retrocede a la imagen anterior de la galería.

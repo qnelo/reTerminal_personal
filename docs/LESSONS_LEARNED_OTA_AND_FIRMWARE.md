@@ -109,7 +109,48 @@ En el *Modo Galería*, el dispositivo queda en consumo cero y mantiene la imagen
 
 ---
 
-## 5. Scripts Reutilizables Desarrollados
+## 5. El Watchdog Oculto de 15 Minutos de ESPHome (`api: reboot_timeout`)
+
+### Problema
+En implementaciones standalone donde el ESP32 no está conectado a una instancia de Home Assistant, el componente `api:` de ESPHome incluye por defecto:
+```yaml
+api:
+  reboot_timeout: 15min # Valor por defecto en ESPHome
+```
+Si ningún cliente API se autentica en el puerto 6053 durante 15 minutos (900 segundos), ESPHome asume que el sistema perdió control o la red falló catastróficamente y dispara un **reinicio forzado por software** (`esp_restart()`).
+Como consecuencia:
+- Exactamente cada 15 minutos en punto (confirmado en logs a los 14m 52s, 15m 02s, etc.), la pantalla ePaper realizaba un ciclo de refresco completo de 20 segundos.
+- Si `display_mode` tenía `restore_value: false`, el reinicio restauraba el valor `0` ("Pendientes Simpli"), expulsando al usuario de la foto de la galería sin haber tocado ningún botón.
+
+### Solución Arquitectónica
+1. **Deshabilitar el temporizador watchdog de la API y de Wi-Fi**:
+   ```yaml
+   api:
+     reboot_timeout: 0s # Desactiva el reinicio por watchdog de Home Assistant
+   wifi:
+     reboot_timeout: 0s # Evita reinicios ante micro-cortes transitorios de Wi-Fi
+     power_save_mode: NONE # Desactiva sleep del módem para mantener puertos y latencia constante
+   ```
+2. **Persistencia de Estado en Memoria No Volátil (NVS)**:
+   Se cambiaron los estados de modo y lámina a persistentes:
+   ```yaml
+   globals:
+     - id: display_mode
+       type: int
+       restore_value: true # Guarda en NVS el modo (0: Pendientes, 1: Galería)
+       initial_value: '0'
+
+     - id: gallery_index
+       type: int
+       restore_value: true # Guarda en NVS la lámina exacta seleccionada
+       initial_value: '0'
+   ```
+3. **Bandera de Arranque Único (`boot_synced`)**:
+   Se evitó que `wifi.on_connect` ejecute `fetch_view` en reconexiones transparentes posteriores a la inicial, reservando la consulta inicial exclusivamente para el primer encendido en frío.
+
+---
+
+## 6. Scripts Reutilizables Desarrollados
 
 | Script | Ubicación | Descripción |
 | :--- | :--- | :--- |

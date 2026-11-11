@@ -137,7 +137,7 @@ Visualizador de escritorio Always-On para los pendientes del segundo cerebro de 
 - **Modo Dual Interactivo**:
   - **Modo Pendientes Simpli**: 5 vistas navegables (Resumen con KPIs, Alta Prioridad, Media Prioridad, Baja Prioridad y Por Cliente).
   - **Modo Galería de Imágenes**: Infografías a pantalla completa (Árbol genealógico de *Cien años de soledad* sin spoilers, fotografías artísticas).
-  - **Conmutación por Atajo Combo**: Presionar ambos botones blancos simultáneamente (`KEY1 + KEY2`) alterna de modo con doble tono de buzzer. Al reiniciar, vuelve siempre a Pendientes.
+  - **Conmutación por Atajo Combo**: Presionar ambos botones blancos simultáneamente (`KEY1 + KEY2`) alterna de modo con doble tono de buzzer. El modo activo y la lámina elegida se guardan en memoria persistente (NVS), manteniéndose indefinidamente en pantalla hasta que se vuelva a pulsar la combinación.
 - **Diseño Ultra-Legible para Spectra 6**: Tipografía bold pesada, tarjetas de alto contraste y cuantización optimizada a 16 colores (<64 KB).
 - **Backend en Servidor / Raspberry Pi**: Servicio systemd sirviendo imágenes PNG y API JSON con telemetría en tiempo real (puerto :8088).
 - **Firmware ESPHome Inteligente**:
