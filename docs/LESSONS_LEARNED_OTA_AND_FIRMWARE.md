@@ -13,11 +13,28 @@ En entornos Linux sin `avahi-daemon` o en redes Wi-Fi con aislamiento de cliente
 Como el dispositivo reTerminal E1002 ya realizaba llamadas HTTP al backend (`/render?view=...`), agregamos en `server.py` el registro de la dirección IP del cliente:
 ```python
 def update_telemetry(params: dict, client_ip: str | None = None):
-    if client_ip:
-        GLOBAL_TELEMETRY["client_ip"] = client_ip
+    ip = params.get("ip", [client_ip])[0]   # la IP que reporta el reTerminal gana a la de origen
+    if ip and "vbat" in params:             # solo el reTerminal manda vbat
+        GLOBAL_TELEMETRY["client_ip"] = str(ipaddress.ip_address(ip))
 ```
-- **Mecanismo de descubrimiento instantáneo**: Al presionar el botón verde (`KEY0`), el microcontrolador contacta al servidor, registrando de inmediato su IP exacta (`192.168.4.60`).
+- **Mecanismo de descubrimiento instantáneo**: Al presionar el botón verde (`KEY0`), el microcontrolador contacta al servidor y su IP queda registrada.
 - **Script automatizado**: Se creó [`scripts/flash_ota.sh`](../scripts/flash_ota.sh), que consulta automáticamente `/api/gallery` para extraer la IP viva del dispositivo y lanzar el flasheo OTA sin intervención manual.
+
+### Trampa: la IP de origen puede ser la de un router con NAT (2026-11-11)
+El backend registraba una IP de la LAN principal como si fuera la del reTerminal, y el OTA respondía `Connection refused`.
+No era el reTerminal. Estaba conectado a la Wi-Fi de un router secundario (Xiaomi), que entrega otra subred y sale a la
+LAN principal con NAT. La IP registrada era la WAN de ese router: rechaza (RST) el puerto 3232 y no reenvía nada hacia adentro.
+- **Cómo se detectó**: `ip neigh` mostró una MAC Xiaomi (no Espressif) para esa IP. Además, `tailscale status` mostró
+  que otro equipo conectado a ese router salía por la misma IP.
+- **Arreglo**: el firmware agrega `&ip=` con su propia IP en cada petición (`get_ip_addresses()[0]`), y el backend la prefiere
+  sobre la de origen. Además, un curl local sin `vbat` ya no pisa la IP guardada (antes el OTA terminó apuntando a `127.0.0.1`).
+- **Si el reTerminal queda detrás de un NAT**: el OTA solo llega desde un equipo de esa misma red. Si no, se flashea por USB.
+  El reTerminal usa un CH340 (`/dev/ttyUSB0`). Se copian los 4 binarios de `build/flasher_args.json` y se flashea así:
+  `uvx --from esptool esptool.py write_flash 0x0 bootloader.bin 0x8000 partition-table.bin 0x9000 ota_data_initial.bin 0x10000 reterminal-second-brain.bin`.
+- **Wi-Fi con respaldo**: `wifi.networks` con `priority` (1 para la principal, 0 para la de respaldo). Si la clave de la principal
+  está mal, el equipo no queda en modo AP: cae a la de respaldo. En el log serie, `reason='4-Way Handshake Timeout'` en WPA2
+  significa contraseña incorrecta.
+- Los nombres de red y las claves viven solo en `secrets.yaml`, que no se versiona. Ni el ejemplo ni la documentación los llevan.
 
 ---
 
@@ -184,6 +201,7 @@ Resultado para el gato (modo `bn`): **39.7 KB**, con pelaje, bigotes y volumen l
 - **La saturación HSV en sombras es ruido**: `(20,15,10)` da S≈128. Una máscara "zonas saturadas" sin exigir brillo (`V > 80`) llenaba el pelaje negro de puntos azules y rojos.
 - **El realce crea halos de color en los bordes**: la máscara de saturación se calcula sobre la foto *sin* realzar.
 - **No asumir el color "a ojo"**: el iris del gato, que parecía verde-dorado, tiene S≈47/255. Casi gris: no hay color que acentuar.
+- **Lo mismo vale para los gráficos dibujados.** El árbol Buendía original usaba colores «casi» de panel por generación, más `quantize(colors=16)`. En el panel, el verde oscuro y el pizarra salían negros, y el ámbar y el carmesí salían rojos: el código de colores no existía en pantalla. El rediseño dibuja con las 6 tintas exactas y `draw.fontmode = "1"` (texto sin antialias), y bajó de 17 KB a 7 KB.
 - **Los 64 KB no son límite para un PNG.** `buffer_size` no se puede subir (el schema de ESPHome lo limita a 65536), pero tampoco hace falta:
   - `online_image` descarga por trozos y `PngDecoder::decode` llama a `pngle_feed`, que consume cada trozo apenas llega.
   - El buffer es solo la ventana de descarga. Solo el JPEG redimensiona el buffer al tamaño total (`online_image.cpp:136`).
@@ -206,7 +224,7 @@ Probado con [`test_adapt_gallery_image.py`](../projects/second_brain_display/bac
 | Script | Ubicación | Descripción |
 | :--- | :--- | :--- |
 | **`flash_ota.sh`** | [`scripts/flash_ota.sh`](../scripts/flash_ota.sh) | Detecta la IP del reTerminal automáticamente y lanza `esphome run` hacia el dispositivo. |
-| **`generate_cien_anos_tree.py`** | [`backend/generate_cien_anos_tree.py`](../projects/second_brain_display/backend/generate_cien_anos_tree.py) | Generador paramétrico de diagramas genealógicos optimizados para E-Ink Spectra 6. |
+| **`generate_cien_anos_tree.py`** | [`backend/generate_cien_anos_tree.py`](../projects/second_brain_display/backend/generate_cien_anos_tree.py) | Póster del árbol Buendía sin spoilers, definido por datos (personas, uniones, hijos) y dibujado con las 6 tintas exactas. |
 | **`adapt_gallery_image.py`** | [`backend/adapt_gallery_image.py`](../projects/second_brain_display/backend/adapt_gallery_image.py) | Encuadre 5:3, tono adaptativo y tramado a las 6 tintas puras (`--mode auto\|bn\|bayer\|acento\|color`, falla si pasa de 64 KB). |
 | **`test_adapt_gallery_image.py`** | [`backend/test_adapt_gallery_image.py`](../projects/second_brain_display/backend/test_adapt_gallery_image.py) | Self-check: la salida no cambia al pasar por la réplica del umbral del driver. |
 | **`start_service.sh`** | [`backend/start_service.sh`](../projects/second_brain_display/backend/start_service.sh) | Inicia el backend con `-u` (unbuffered logging) y gestión automática de PID. |
