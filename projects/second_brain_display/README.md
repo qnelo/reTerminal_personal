@@ -140,9 +140,11 @@ El archivo de configuración [`firmware/second_brain_display.yaml`](firmware/sec
 2. **Modo Galería y Árbol Genealógico sin Spoilers**:
    - Galería de láminas gráficas optimizadas para Spectra 6 (800×480 px).
    - Primera lámina integrada: **Árbol Genealógico de la familia Buendía (*Cien años de soledad*)**, con estructura por generaciones, rasgos simbólicos de cada personaje (mariposas amarillas, pescaditos de oro, cruz de ceniza) y estricto filtro anti-spoilers para acompañar la lectura del libro.
-3. **Horario Inteligente de Refresco (Ahorro de Batería y Pantalla)**:
+3. **Horario Inteligente y Modo Galería Nocturno / Fin de Semana**:
    - Sincronización horaria automática por red mediante **SNTP** (`America/Santiago`).
-   - El refresco automático por reloj ocurre periódicamente **únicamente cuando el dispositivo está en Modo Pendientes** (no interrumpe la visualización de la galería).
+   - **Horario Laboral (Lunes a Viernes de 08:45 a 19:00)**: A las 08:45 activa automáticamente el **Modo Pendientes** y refresca cada 15 minutos entre 09:00 y 18:45.
+   - **Noches y Fines de Semana**: A las 19:00 conmuta automáticamente a **Modo Galería** (arte / cuadro digital) y suspende los refrescos periódicos laborales para descansar la pantalla y ahorrar energía. Al arrancar fuera de horario laboral, detecta el horario tras sincronizar el reloj y pasa directo a Galería.
+   - Si el usuario conmuta manualmente entre modos, el refresco periódico respeta el modo elegido.
 3. **Telemetría Bidireccional Integrada**:
    - En cada refresco o cambio de vista, el reTerminal adjunta sus lecturas en la URL:
      `http://<IP_SERVIDOR>:8088/render?view=resumen&vbat=4.11&temp=26.5&hum=48.0`

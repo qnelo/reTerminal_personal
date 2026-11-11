@@ -103,28 +103,52 @@ on_release:
 
 ---
 
-## 4. Supresión de Refrescos Automáticos en Modos Estáticos
+## 4. Transición Automática Noche/Fin de Semana y Supresión de Refrescos en Modos Estáticos
 
 ### Problema
-El reTerminal tiene un reloj SNTP que refresca la pantalla cada 15 minutos en horario laboral (09:00 a 18:45). Si el usuario cambió a la galería para consultar el árbol genealógico mientras lee una novela, un refresco periódico del horario laboral sobreescribiría la pantalla con tareas de trabajo automáticamente.
+El reTerminal tiene un reloj SNTP que refresca la pantalla cada 15 minutos en horario laboral (09:00 a 18:45). Se requerían dos comportamientos clave:
+1. Al terminar la jornada laboral (19:00) y durante todo el fin de semana, el dispositivo debe pasar automáticamente a **Modo Galería** (cuadro digital de arte/fotografía) y suspender los refrescos periódicos laborales.
+2. Al iniciar la jornada laboral (08:45 Lun-Vie), debe volver automáticamente a **Modo Pendientes** para mostrar las tareas del día.
+3. Si el usuario conmuta manualmente a Galería durante la jornada laboral para leer o apreciar una lámina, los refrescos periódicos cada 15 minutos no deben sobreescribir la pantalla.
 
-### Solución: Filtro de Modo en los Disparadores Horarios
-Se condicionaron todos los eventos `on_time` al modo activo:
+### Solución: Disparadores Horarios de Modo y Filtro en Refrescos Periódicos
+Se implementaron reglas horarias con conmutación de modo y comprobación al sincronizar la hora:
 ```yaml
 time:
   - platform: sntp
+    on_time_sync:
+      then:
+        # Al arrancar, si la hora actual es noche o fin de semana, asegura Modo Galería
     on_time:
+      # 08:45 Lun-Vie: activa Modo Pendientes
+      - minutes: 45
+        hours: 8
+        days_of_week: MON-FRI
+        then:
+          - lambda: 'id(display_mode) = 0;'
+          - script.execute: fetch_view
+      # 09:00-18:45 Lun-Vie: refresco cada 15 min solo si está en Pendientes
       - minutes: /15
         hours: 9-18
         days_of_week: MON-FRI
         then:
           - if:
               condition:
-                lambda: 'return id(display_mode) == 0;' # Solo en Modo Pendientes
+                lambda: 'return id(display_mode) == 0;'
               then:
                 - script.execute: fetch_view
+      # 19:00 diario: activa Modo Galería para noche y fin de semana
+      - minutes: 0
+        hours: 19
+        then:
+          - if:
+              condition:
+                lambda: 'return id(display_mode) == 0;'
+              then:
+                - lambda: 'id(display_mode) = 1;'
+                - script.execute: fetch_view
 ```
-En el *Modo Galería*, el dispositivo queda en consumo cero y mantiene la imagen estática sin interrupciones hasta que el usuario decida volver a Pendientes.
+En el *Modo Galería*, el dispositivo queda en consumo cero y mantiene la imagen estática sin interrupciones hasta que el usuario decida volver a Pendientes o inicie la jornada laboral.
 
 ---
 

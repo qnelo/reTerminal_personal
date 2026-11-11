@@ -49,7 +49,19 @@ wifi:
           condition:
             lambda: 'return !id(boot_synced);'
           then:
-            - lambda: 'id(boot_synced) = true;'
+            - lambda: |-
+                id(boot_synced) = true;
+                auto now = id(sntp_time).now();
+                if (now.is_valid()) {
+                  bool is_weekend = (now.day_of_week == 1 || now.day_of_week == 7);
+                  int current_minutes = now.hour * 60 + now.minute;
+                  bool is_work_hours = (!is_weekend && current_minutes >= 525 && current_minutes < 1140);
+                  id(display_mode) = is_work_hours ? 0 : 1;
+                  id(initial_time_synced) = true;
+                  ESP_LOGI("schedule", "Arranque con hora válida (%s): Modo %s",
+                           (is_work_hours ? "Horario laboral" : "Noche/Fin de semana"),
+                           (id(display_mode) == 0 ? "PENDIENTES" : "GALERIA"));
+                }
             - logger.log: "Primer arranque: solicitando imagen inicial con telemetría..."
             - script.execute: fetch_view
 
@@ -72,6 +84,11 @@ i2c:
 
 globals:
   - id: boot_synced
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+
+  - id: initial_time_synced
     type: bool
     restore_value: false
     initial_value: 'false'
@@ -225,20 +242,42 @@ time:
       - 0.pool.ntp.org
       - 1.pool.ntp.org
       - 2.pool.ntp.org
+    on_time_sync:
+      then:
+        - if:
+            condition:
+              lambda: 'return !id(initial_time_synced);'
+            then:
+              - lambda: |-
+                  id(initial_time_synced) = true;
+                  auto now = id(sntp_time).now();
+                  if (now.is_valid()) {
+                    bool is_weekend = (now.day_of_week == 1 || now.day_of_week == 7);
+                    int current_minutes = now.hour * 60 + now.minute;
+                    // Horario laboral: Lunes a Viernes de 08:45 (525 min) a 19:00 (1140 min)
+                    bool is_work_hours = (!is_weekend && current_minutes >= 525 && current_minutes < 1140);
+                    int target_mode = is_work_hours ? 0 : 1;
+                    if (id(display_mode) != target_mode) {
+                      ESP_LOGI("schedule", "Sincronización horaria inicial: ajustando a Modo %s (%s)",
+                               (target_mode == 0 ? "PENDIENTES" : "GALERIA"),
+                               (is_work_hours ? "Horario laboral" : "Noche/Fin de semana"));
+                      id(display_mode) = target_mode;
+                      id(fetch_view).execute();
+                    }
+                  }
     on_time:
-      # 1) A las 08:45 de Lunes a Viernes (inicio de jornada)
+      # 1) A las 08:45 de Lunes a Viernes: Inicio de jornada laboral -> Activar automáticamente Modo Pendientes
       - seconds: 0
         minutes: 45
         hours: 8
         days_of_week: MON-FRI
         then:
-          - if:
-              condition:
-                lambda: 'return id(display_mode) == 0;'
-              then:
-                - logger.log: "Refresco programado (08:45 Lun-Vie)"
-                - script.execute: fetch_view
-      # 2) Cada 15 minutos entre 09:00 y 18:45 de Lunes a Viernes
+          - logger.log: "Inicio de jornada laboral (08:45 Lun-Vie): activando Modo Pendientes"
+          - lambda: |-
+              id(display_mode) = 0;
+          - script.execute: fetch_view
+
+      # 2) Cada 15 minutos entre 09:00 y 18:45 de Lunes a Viernes (refresco periódico solo en Modo Pendientes)
       - seconds: 0
         minutes: /15
         hours: 9-18
@@ -250,17 +289,19 @@ time:
               then:
                 - logger.log: "Refresco programado (09:00-18:45 Lun-Vie cada 15 min)"
                 - script.execute: fetch_view
-      # 3) A las 19:00 de Lunes a Viernes (último refresco del horario laboral)
+
+      # 3) A las 19:00 todos los días: Cierre de jornada / Noche / Fin de semana -> Activar automáticamente Modo Galería
       - seconds: 0
         minutes: 0
         hours: 19
-        days_of_week: MON-FRI
         then:
           - if:
               condition:
                 lambda: 'return id(display_mode) == 0;'
               then:
-                - logger.log: "Refresco programado de cierre (19:00 Lun-Vie)"
+                - logger.log: "Cierre diario (19:00): activando Modo Galería para la noche / fin de semana"
+                - lambda: |-
+                    id(display_mode) = 1;
                 - script.execute: fetch_view
 
 # Pantalla E Ink Spectra 6 (800x480)
