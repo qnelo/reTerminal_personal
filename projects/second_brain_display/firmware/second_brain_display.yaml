@@ -28,8 +28,14 @@ ota:
   platform: esphome
 
 wifi:
-  ssid: !secret wifi_ssid
-  password: !secret wifi_password
+  # Mayor prioridad se intenta primero; si falla, ESPHome baja su prioridad y prueba la de respaldo.
+  networks:
+    - ssid: !secret wifi_ssid
+      password: !secret wifi_password
+      priority: 1
+    - ssid: !secret wifi_fallback_ssid
+      password: !secret wifi_fallback_password
+      priority: 0
   reboot_timeout: 0s # Evita reinicios por micro-desconexiones Wi-Fi
   power_save_mode: NONE # Desactiva el modo sueño del módem para mantener baja latencia y puertos activos
   ap:
@@ -82,15 +88,12 @@ globals:
     restore_value: true
     initial_value: '0'
 
+  # Sin tope en el dispositivo: el backend lo envuelve con idx % total (incluye negativos),
+  # así la galería puede crecer sin reflashear.
   - id: gallery_index
     type: int
     restore_value: true
     initial_value: '0'
-
-  - id: gallery_count
-    type: int
-    restore_value: false
-    initial_value: '2'
 
   - id: combo_active
     type: bool
@@ -196,6 +199,9 @@ script:
             // Modo Galería de Imágenes (Árbol genealógico Cien años de soledad)
             url = std::string("http://192.168.4.36:8088/render?mode=galeria&idx=") + esphome::to_string(id(gallery_index));
           }
+          // IP propia del reTerminal: detrás de un router con NAT el backend solo ve la del router, y el OTA necesita esta.
+          char ip_buf[network::IP_ADDRESS_BUFFER_SIZE];
+          url += std::string("&ip=") + wifi::global_wifi_component->get_ip_addresses()[0].str_to(ip_buf);
           if (!isnan(id(battery_voltage).state)) {
             url += "&vbat=" + esphome::to_string(id(battery_voltage).state);
           }
@@ -307,7 +313,7 @@ binary_sensor:
             if (id(display_mode) == 0) {
               id(view_index) = (id(view_index) - 1 + 5) % 5;
             } else {
-              id(gallery_index) = (id(gallery_index) - 1 + id(gallery_count)) % id(gallery_count);
+              id(gallery_index) -= 1;
             }
         - if:
             condition:
@@ -349,7 +355,7 @@ binary_sensor:
             if (id(display_mode) == 0) {
               id(view_index) = (id(view_index) + 1) % 5;
             } else {
-              id(gallery_index) = (id(gallery_index) + 1) % id(gallery_count);
+              id(gallery_index) += 1;
             }
         - if:
             condition:

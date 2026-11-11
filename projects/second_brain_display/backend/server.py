@@ -7,6 +7,7 @@ del Second Brain al reTerminal E1002 y para previsualización web.
 from __future__ import annotations
 
 import io
+import ipaddress
 import json
 import logging
 import os
@@ -61,9 +62,15 @@ def get_gallery_images() -> list[Path]:
 def update_telemetry(params: dict, client_ip: str | None = None):
     updated = False
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    if client_ip:
-        GLOBAL_TELEMETRY["client_ip"] = client_ip
-        updated = True
+    # La IP que el reTerminal reporta de sí mismo gana a la de origen: detrás de un router con NAT
+    # la de origen es la del router y el OTA no llega.
+    ip = params.get("ip", [client_ip])[0]
+    if ip and "vbat" in params:  # solo el reTerminal manda vbat: un curl o navegador no pisa su IP de OTA
+        try:
+            GLOBAL_TELEMETRY["client_ip"] = str(ipaddress.ip_address(ip))  # termina como argumento de esphome
+            updated = True
+        except ValueError:
+            pass
     if "vbat" in params:
         try:
             v = float(params["vbat"][0])
