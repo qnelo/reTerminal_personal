@@ -156,4 +156,5 @@ Como consecuencia:
 | :--- | :--- | :--- |
 | **`flash_ota.sh`** | [`scripts/flash_ota.sh`](../scripts/flash_ota.sh) | Detecta la IP del reTerminal automáticamente y lanza `esphome run` hacia el dispositivo. |
 | **`generate_cien_anos_tree.py`** | [`backend/generate_cien_anos_tree.py`](../projects/second_brain_display/backend/generate_cien_anos_tree.py) | Generador paramétrico de diagramas genealógicos optimizados para E-Ink Spectra 6. |
+| **`adapt_gallery_image.py`** | [`backend/adapt_gallery_image.py`](../projects/second_brain_display/backend/adapt_gallery_image.py) | Pipeline de encuadre 5:3, realce y tramado de fotos reales para Spectra 6 (<64 KB). |
 | **`start_service.sh`** | [`backend/start_service.sh`](../projects/second_brain_display/backend/start_service.sh) | Inicia el backend con `-u` (unbuffered logging) y gestión automática de PID. |

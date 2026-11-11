@@ -40,8 +40,8 @@ Pulsando **ambos botones blancos a la vez (Izquierdo + Derecho)**, el dispositiv
 Estructura generacional completa (fundadores, hijos, nietos, bisnietos, tataranietos y fin del linaje), con rasgos y símbolos clave sin spoilers, contornos de 2 px y conectores dobles/discontinuos de alto contraste.
 ![Árbol Genealógico Buendía](backend/previews/cien_anos_arbol.png)
 
-### Lámina 2: Fotografía Artística (Gatito en Repisa)
-Ilustración fotográfica de alto detalle optimizada con tramado Floyd-Steinberg en 16 colores para la paleta de pigmentos físicos Spectra 6.
+### Lámina 2: Fotografía Artística (Gatito Panterita)
+Fotografía de gato negro en pose loaf, con encuadre completo de orejas y patas de borde a borde sin barras negras, realce de micro-detalles en bigotes y pelaje, ojos en tono verde-dorado y tramado Floyd-Steinberg optimizado en 11 colores (54.1 KB) para no saturar el buffer de 64 KB de ESPHome.
 ![Gatito](backend/previews/gatito.png)
 
 ---
