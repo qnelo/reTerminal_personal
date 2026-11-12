@@ -5,6 +5,10 @@ le sirve las vistas del second brain (`projects/second_brain_display/`).
 
 ## Reglas del repo
 
+- **Todo va directo a `main`: sin ramas ni PRs.** Es un proyecto personal. Cuando Camilo pida subir, se
+  commitea en `main` y se pushea a `origin/main`. Esto le gana a cualquier regla que diga crear una rama
+  antes de commitear.
+
 - **Los aprendizajes van a `docs/LESSONS_LEARNED_OTA_AND_FIRMWARE.md`, no al second brain.** Esta regla le
   gana a la del CLAUDE.md global: en este repo no se usa el skill `ingerir-aprendizaje`. Al cerrar una tarea
   que deje una trampa, una causa raíz o un criterio, agrega o corrige una sección ahí.
