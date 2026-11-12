@@ -6,6 +6,7 @@ del Second Brain al reTerminal E1002 y para previsualización web.
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import ipaddress
 import json
@@ -41,6 +42,9 @@ GLOBAL_TELEMETRY: dict[str, Any] = {
     "client_ip": None,
     "updated_at": "2026-11-10 17:49:00",
 }
+
+# Hash de la última vista de pendientes enviada al reTerminal: con if_changed=1 y el mismo hash responde 304.
+LAST_DEVICE_HASH: str | None = None
 
 GALLERY_DIR = CURRENT_DIR / "gallery"
 
@@ -162,6 +166,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(e))
 
     def send_image_response(self, params: dict):
+        global LAST_DEVICE_HASH
         try:
             update_telemetry(params, self.client_address[0])
             mode = params.get("mode", ["pendientes"])[0].lower()
@@ -178,6 +183,8 @@ class Handler(BaseHTTPRequestHandler):
                     idx = 0
                 idx = idx % len(images)
                 target_img_path = images[idx]
+                if "vbat" in params:  # la pantalla ya no muestra pendientes: el próximo pedido debe dibujar
+                    LAST_DEVICE_HASH = None
                 with open(target_img_path, "rb") as f:
                     img_bytes = f.read()
 
@@ -192,12 +199,22 @@ class Handler(BaseHTTPRequestHandler):
             # Modo Pendientes de Simpli habitual
             view = params.get("view", ["resumen"])[0]
             data = get_pendientes_data()
+            # Solo el contenido de la vista: hora y telemetría no cuentan como cambio; vence_str sí (Mañana→Hoy).
+            view_json = json.dumps([view, data.get("vistas", {}).get(view)], sort_keys=True, ensure_ascii=False)
+            view_hash = hashlib.sha256(view_json.encode("utf-8")).hexdigest()
+            if "if_changed" in params and view_hash == LAST_DEVICE_HASH:
+                self.send_response(HTTPStatus.NOT_MODIFIED)
+                self.end_headers()
+                return
+
             img = render_view(view, data, telemetry=GLOBAL_TELEMETRY)
 
             buf = io.BytesIO()
             img.save(buf, format="PNG", optimize=True)
             img_bytes = buf.getvalue()
 
+            if "vbat" in params:  # solo el reTerminal manda vbat: la vista previa del navegador no pisa el estado
+                LAST_DEVICE_HASH = view_hash
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "image/png")
             self.send_header("Content-Length", str(len(img_bytes)))

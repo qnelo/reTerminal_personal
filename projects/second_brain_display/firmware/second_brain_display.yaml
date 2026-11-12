@@ -1,15 +1,22 @@
 esphome:
   name: reterminal-second-brain
   friendly_name: "Second Brain E1002"
+  includes:
+    - schedule.h
   on_boot:
     priority: 600
     then:
       - output.turn_on: bsp_battery_enable
+      # Un despertar programado de noche no muestra nada: se vuelve a dormir apenas tiene la hora.
+      - lambda: |-
+          if (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_TIMER)
+            id(awake_until_ms) = millis() + AWAKE_GRACE_MS;
       - delay: 200ms
       - component.update: battery_voltage
 
 esp32:
   board: esp32-s3-devkitc-1
+  cpu_frequency: 80MHZ # Basta para descargar y decodificar el PNG; 240 MHz consumía de más todo el día
   framework:
     type: arduino
 
@@ -37,7 +44,8 @@ wifi:
       password: !secret wifi_fallback_password
       priority: 0
   reboot_timeout: 0s # Evita reinicios por micro-desconexiones Wi-Fi
-  power_save_mode: NONE # Desactiva el modo sueño del módem para mantener baja latencia y puertos activos
+  # LIGHT (el default de ESPHome en ESP32): con NONE la radio no dormía nunca y la batería duraba ~19 h.
+  power_save_mode: LIGHT
   ap:
     ssid: "reTerminal-SecondBrain-AP"
     password: "ChangeMe123"
@@ -51,19 +59,24 @@ wifi:
           then:
             - lambda: |-
                 id(boot_synced) = true;
+                auto cause = esp_sleep_get_wakeup_cause();
+                bool fetch = true;
+                // Tras un deep sleep la hora sigue válida (la lleva el RTC); en un arranque en frío no.
                 auto now = id(sntp_time).now();
                 if (now.is_valid()) {
-                  bool is_weekend = (now.day_of_week == 1 || now.day_of_week == 7);
-                  int current_minutes = now.hour * 60 + now.minute;
-                  bool is_work_hours = (!is_weekend && current_minutes >= 525 && current_minutes < 1140);
-                  id(display_mode) = is_work_hours ? 0 : 1;
+                  bool work = is_work_hours(now.day_of_week, now.hour, now.minute);
+                  if (cause == ESP_SLEEP_WAKEUP_TIMER) {
+                    // De noche la tinta ya muestra lo último: solo se dibuja al empezar la jornada.
+                    if (work) id(display_mode) = 0; else fetch = false;
+                  } else if (cause != ESP_SLEEP_WAKEUP_EXT1) {
+                    id(display_mode) = work ? 0 : 1;  // arranque en frío: manda el horario
+                  }  // despertado por un botón: se respeta el modo elegido
                   id(initial_time_synced) = true;
-                  ESP_LOGI("schedule", "Arranque con hora válida (%s): Modo %s",
-                           (is_work_hours ? "Horario laboral" : "Noche/Fin de semana"),
-                           (id(display_mode) == 0 ? "PENDIENTES" : "GALERIA"));
+                  ESP_LOGI("schedule", "Arranque (causa %d, %s): Modo %s%s", (int) cause,
+                           (work ? "Horario laboral" : "Noche/Fin de semana"),
+                           (id(display_mode) == 0 ? "PENDIENTES" : "GALERIA"), (fetch ? "" : ", sin redibujar"));
                 }
-            - logger.log: "Primer arranque: solicitando imagen inicial con telemetría..."
-            - script.execute: fetch_view
+                if (fetch) id(fetch_view).execute();
 
 captive_portal:
 
@@ -113,6 +126,31 @@ globals:
     initial_value: '0'
 
   - id: combo_active
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+
+  # Lo pone el refresco de 15 min: pide la imagen con if_changed=1 y el backend responde 304 si no cambió nada.
+  - id: only_if_changed
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+
+  # true solo si la última descarga se dibujó bien. El backend anota el estado al enviar el 200; si la
+  # descarga falla aquí, sin esto respondería 304 a una pantalla desactualizada hasta el próximo cambio.
+  - id: screen_synced
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+
+  # Fuera de horario no se duerme antes de este millis(): lo extienden el arranque y cada fetch_view.
+  - id: awake_until_ms
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+
+  # La hora del RTC tras un deep sleep viene desviada: se espera el SNTP para calcular el próximo despertar.
+  - id: sntp_synced
     type: bool
     restore_value: false
     initial_value: 'false'
@@ -171,14 +209,22 @@ image:
     update_interval: never # Se actualiza mediante el script fetch_view
     on_download_finished:
       then:
-        - light.turn_on:
-            id: status_led
-        - delay: 200ms
-        - light.turn_off:
-            id: status_led
-        - component.update: epaper_display
+        - if:
+            condition:
+              lambda: 'return !cached;'
+            then:
+              - light.turn_on:
+                  id: status_led
+              - delay: 200ms
+              - light.turn_off:
+                  id: status_led
+              - component.update: epaper_display
+              - lambda: 'id(screen_synced) = true;'
+            else:
+              - logger.log: "Sin cambios en pendientes (HTTP 304): no se refresca la pantalla"
     on_error:
       then:
+        - lambda: 'id(screen_synced) = false;'
         - logger.log: "Error descargando imagen desde el backend"
 
 script:
@@ -207,11 +253,15 @@ script:
   - id: fetch_view
     then:
       - lambda: |-
+          id(awake_until_ms) = millis() + AWAKE_GRACE_MS;  // que no se duerma a mitad del refresco
           std::string url;
           if (id(display_mode) == 0) {
             // Modo Pendientes Simpli
             const char* views[] = {"resumen", "alta", "media", "baja", "clientes"};
             url = std::string("http://192.168.4.36:8088/render?view=") + views[id(view_index)];
+            if (id(only_if_changed) && id(screen_synced)) {
+              url += "&if_changed=1";
+            }
           } else {
             // Modo Galería de Imágenes (Árbol genealógico Cien años de soledad)
             url = std::string("http://192.168.4.36:8088/render?mode=galeria&idx=") + esphome::to_string(id(gallery_index));
@@ -228,6 +278,7 @@ script:
           if (!isnan(id(room_hum).state)) {
             url += "&hum=" + esphome::to_string(id(room_hum).state);
           }
+          id(only_if_changed) = false;
           ESP_LOGI("second_brain", "Solicitando imagen (%s): %s",
                    (id(display_mode) == 0 ? "Pendientes" : "Galería"), url.c_str());
           id(sb_view_image).set_url(url);
@@ -244,6 +295,7 @@ time:
       - 2.pool.ntp.org
     on_time_sync:
       then:
+        - lambda: 'id(sntp_synced) = true;'
         - if:
             condition:
               lambda: 'return !id(initial_time_synced);'
@@ -252,15 +304,12 @@ time:
                   id(initial_time_synced) = true;
                   auto now = id(sntp_time).now();
                   if (now.is_valid()) {
-                    bool is_weekend = (now.day_of_week == 1 || now.day_of_week == 7);
-                    int current_minutes = now.hour * 60 + now.minute;
-                    // Horario laboral: Lunes a Viernes de 08:45 (525 min) a 19:00 (1140 min)
-                    bool is_work_hours = (!is_weekend && current_minutes >= 525 && current_minutes < 1140);
-                    int target_mode = is_work_hours ? 0 : 1;
+                    bool work = is_work_hours(now.day_of_week, now.hour, now.minute);
+                    int target_mode = work ? 0 : 1;
                     if (id(display_mode) != target_mode) {
                       ESP_LOGI("schedule", "Sincronización horaria inicial: ajustando a Modo %s (%s)",
                                (target_mode == 0 ? "PENDIENTES" : "GALERIA"),
-                               (is_work_hours ? "Horario laboral" : "Noche/Fin de semana"));
+                               (work ? "Horario laboral" : "Noche/Fin de semana"));
                       id(display_mode) = target_mode;
                       id(fetch_view).execute();
                     }
@@ -287,7 +336,8 @@ time:
               condition:
                 lambda: 'return id(display_mode) == 0;'
               then:
-                - logger.log: "Refresco programado (09:00-18:45 Lun-Vie cada 15 min)"
+                - logger.log: "Refresco programado (09:00-18:45 Lun-Vie cada 15 min, solo si hay cambios)"
+                - lambda: 'id(only_if_changed) = true;'
                 - script.execute: fetch_view
 
       # 3) A las 19:00 todos los días: Cierre de jornada / Noche / Fin de semana -> Activar automáticamente Modo Galería
@@ -303,6 +353,52 @@ time:
                 - lambda: |-
                     id(display_mode) = 1;
                 - script.execute: fetch_view
+
+# Deep sleep fuera de horario laboral. Despierta a las 08:45 del próximo día hábil (por tramos de 4 h)
+# o con cualquier botón: los tres son activos en bajo con pull-up externo de 10K (R30/R34/R36).
+deep_sleep:
+  id: deep_sleep_ctl
+  esp32_ext1_wakeup:
+    mode: ANY_LOW
+    pins:
+      - pin: # Verde: despierta y redibuja la vista actual
+          number: GPIO3
+          allow_other_uses: true
+      - pin: # Derecho: despierta y avanza, como su on_press
+          number: GPIO4
+          allow_other_uses: true
+        on_wake:
+          - lambda: |-
+              if (id(display_mode) == 0) id(view_index) = (id(view_index) + 1) % 5;
+              else id(gallery_index) += 1;
+      - pin: # Izquierdo: despierta y retrocede
+          number: GPIO5
+          allow_other_uses: true
+        on_wake:
+          - lambda: |-
+              if (id(display_mode) == 0) id(view_index) = (id(view_index) - 1 + 5) % 5;
+              else id(gallery_index) -= 1;
+
+interval:
+  - interval: 30s
+    then:
+      - if:
+          condition:
+            lambda: |-
+              auto now = id(sntp_time).now();
+              if (!now.is_valid() || is_work_hours(now.day_of_week, now.hour, now.minute)) return false;
+              if (millis() < id(awake_until_ms)) return false;  // arranque, botón o refresco recientes
+              return id(sntp_synced) || millis() > 120000;     // sin SNTP en 2 min, se usa la hora del RTC
+          then:
+            - lambda: |-
+                auto now = id(sntp_time).now();
+                ESP_LOGI("schedule", "Fuera de horario: deep sleep por %u min",
+                         ms_until_workday(now.day_of_week, now.hour, now.minute, now.second, SLEEP_CHUNK_MS) / 60000);
+            - deep_sleep.enter:
+                id: deep_sleep_ctl
+                sleep_duration: !lambda |-
+                  auto now = id(sntp_time).now();
+                  return ms_until_workday(now.day_of_week, now.hour, now.minute, now.second, SLEEP_CHUNK_MS);
 
 # Pantalla E Ink Spectra 6 (800x480)
 display:
@@ -320,6 +416,7 @@ binary_sensor:
       number: GPIO3
       mode: INPUT_PULLUP
       inverted: true
+      allow_other_uses: true # también despierta del deep sleep
     id: btn_refresh
     name: "Sincronizar (KEY0)"
     on_press:
@@ -338,6 +435,7 @@ binary_sensor:
       number: GPIO5
       mode: INPUT_PULLUP
       inverted: true
+      allow_other_uses: true
     id: btn_prev
     name: "Botón Izquierdo"
     on_press:
@@ -380,6 +478,7 @@ binary_sensor:
       number: GPIO4
       mode: INPUT_PULLUP
       inverted: true
+      allow_other_uses: true
     id: btn_next
     name: "Botón Derecho"
     on_press:

@@ -142,8 +142,9 @@ El archivo de configuración [`firmware/second_brain_display.yaml`](firmware/sec
    - Primera lámina integrada: **Árbol Genealógico de la familia Buendía (*Cien años de soledad*)**, con estructura por generaciones, rasgos simbólicos de cada personaje (mariposas amarillas, pescaditos de oro, cruz de ceniza) y estricto filtro anti-spoilers para acompañar la lectura del libro.
 3. **Horario Inteligente y Modo Galería Nocturno / Fin de Semana**:
    - Sincronización horaria automática por red mediante **SNTP** (`America/Santiago`).
-   - **Horario Laboral (Lunes a Viernes de 08:45 a 19:00)**: A las 08:45 activa automáticamente el **Modo Pendientes** y refresca cada 15 minutos entre 09:00 y 18:45.
+   - **Horario Laboral (Lunes a Viernes de 08:45 a 19:00)**: A las 08:45 activa automáticamente el **Modo Pendientes** y refresca cada 15 minutos entre 09:00 y 18:45. Ese refresco solo redibuja si cambiaron las pendientes de la vista en pantalla (si no, el backend responde `304`). Los botones y el arranque siempre redibujan.
    - **Noches y Fines de Semana**: A las 19:00 conmuta automáticamente a **Modo Galería** (arte / cuadro digital) y suspende los refrescos periódicos laborales para descansar la pantalla y ahorrar energía. Al arrancar fuera de horario laboral, detecta el horario tras sincronizar el reloj y pasa directo a Galería.
+   - **Deep sleep fuera de horario**: 3 minutos después del último refresco o botón, el ESP32 se duerme (la tinta conserva la imagen) hasta las 08:45 del próximo día hábil. Despierta cada 4 h solo para corregir el reloj, sin redibujar. Cualquier botón lo despierta: el verde redibuja, y los laterales avanzan o retroceden la lámina. Después de un botón quedan 3 minutos despierto, que sirven también para flashear por OTA. El combo de los dos botones solo funciona estando despierto.
    - Si el usuario conmuta manualmente entre modos, el refresco periódico respeta el modo elegido.
 3. **Telemetría Bidireccional Integrada**:
    - En cada refresco o cambio de vista, el reTerminal adjunta sus lecturas en la URL:
