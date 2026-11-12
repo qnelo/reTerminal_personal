@@ -172,8 +172,8 @@ Como consecuencia:
      reboot_timeout: 0s # Desactiva el reinicio por watchdog de Home Assistant
    wifi:
      reboot_timeout: 0s # Evita reinicios ante micro-cortes transitorios de Wi-Fi
-     power_save_mode: NONE # Desactiva sleep del módem para mantener puertos y latencia constante
    ```
+   > **Corrección (2026-11-12):** en esta solución también se había puesto `power_save_mode: NONE`. No hacía falta, porque el reinicio lo causaba `api.reboot_timeout`, y mantenía la radio Wi-Fi siempre encendida: la batería duraba ~19 h. Ver la sección 8.
 2. **Persistencia de Estado en Memoria No Volátil (NVS)**:
    Se cambiaron los estados de modo y lámina a persistentes:
    ```yaml
@@ -243,7 +243,68 @@ Probado con [`test_adapt_gallery_image.py`](../projects/second_brain_display/bac
 
 ---
 
-## 7. Scripts Reutilizables Desarrollados
+## 7. Refresco Condicional: No Redibujar si las Pendientes No Cambiaron
+
+### Problema
+El refresco de cada 15 minutos redibujaba el panel Spectra 6 (unos 20 s de consumo alto) aunque las pendientes fueran las mismas.
+
+### Trampa: el ETag nativo de `online_image` no sirve con URL dinámica
+`online_image` ya maneja peticiones condicionales: guarda `ETag` y `Last-Modified`, y los reenvía como `If-None-Match` y `If-Modified-Since`. Pero `set_url()` los borra (`online_image.h:58`, ESPHome 2026.10.2). `fetch_view` llama a `set_url` en cada pedido porque la URL lleva vbat, temp e hum, así que el dispositivo nunca manda el ETag.
+
+### Solución: el estado lo guarda el servidor y el flag es un 304
+- **Backend** ([`server.py`](../projects/second_brain_display/backend/server.py)):
+  - Guarda el hash de la última vista de pendientes enviada al reTerminal: solo los pedidos con `vbat`, para que la vista previa del navegador no pise el estado.
+  - Con `if_changed=1` y el mismo hash, responde `304` sin cuerpo.
+  - En el hash entra solo el contenido de la vista: la hora y la telemetría no cuentan como cambio, pero `vence_str` sí (el paso de "Mañana" a "Hoy").
+- **Firmware**:
+  - Ante un 304, `online_image` no descarga y dispara `on_download_finished` con `cached = true`, que la automatización puede leer (`image.py:100`).
+  - Con `cached`, no se llama a `component.update: epaper_display`.
+  - Solo el tick de 15 min manda `if_changed=1`. Los botones, el arranque, las 08:45 y las 19:00 siempre dibujan.
+- **Que nunca quede atascado en 304**: el servidor anota el estado al *enviar* el 200, pero la descarga puede fallar en el dispositivo. El global `screen_synced` (sin `restore_value`) se pone en `true` solo al dibujar y en `false` en `on_error` y al arrancar. El tick manda `if_changed` solo si es `true`.
+
+Probado con [`test_server_if_changed.py`](../projects/second_brain_display/backend/test_server_if_changed.py).
+
+---
+
+## 8. La Batería Duraba 19 Horas: el ESP32 Nunca Dormía
+
+### Problema
+Con carga casi completa (4,11 V a las 10:30), el reTerminal estaba muerto antes de las 05:57 del día siguiente. La telemetría que manda en cada pedido (`vbat` en el log del backend) muestra la curva:
+- 3,70 V a las 19:00, al pasar a la galería.
+- Reinicios por batería agotada a las 05:57, 07:04 y 10:00, con 2,79–2,85 V.
+
+Eso es un consumo estimado de ~90–100 mA promedio sobre 2000 mAh. No es una falla, es la configuración:
+- `wifi: power_save_mode: NONE`: la radio no duerme entre los avisos periódicos del router.
+- La CPU a 240 MHz (el máximo, que es el default) y ningún `deep_sleep`.
+
+Toda la noche se gastaba en mostrar una lámina fija, que la tinta conserva sin energía.
+
+Lo que **no** era la causa:
+- **La pantalla:** el driver la manda a deep sleep después de cada refresco (`epaper_spi.cpp:244`). Unos 40 refrescos de ~20 s al día son menos del 1 %.
+- **El refresco condicional de la sección 7:** cuida el panel más que la batería.
+
+### Solución
+1. **De día:** `power_save_mode: LIGHT` (el default de ESPHome en ESP32) y `cpu_frequency: 80MHZ`.
+2. **Fuera de horario, `deep_sleep`:** una regla cada 30 s duerme el equipo si se cumplen tres condiciones:
+   - Está fuera de horario laboral.
+   - Pasaron 3 min desde el último arranque, botón o refresco (ventana para OTA y para navegar la galería).
+   - La hora vino de SNTP, o pasaron 2 min sin lograrlo.
+3. **Despertar programado:** a las 08:45 del próximo día hábil (`schedule.h`, probado con `test_schedule.cpp`).
+4. **Despertar con botón:** `esp32_ext1_wakeup` con `ANY_LOW` sobre GPIO3/4/5. El `on_wake` de cada pin replica su acción: avanzar o retroceder la lámina.
+
+### Trampas
+- **El timer del deep sleep se desvía:** usa el oscilador RC interno, con unos minutos de error por hora. De viernes a lunes son ~62 h. Por eso se duerme por tramos de 4 h, y cada despertar resincroniza por SNTP. La hora del sistema sí sobrevive al deep sleep, porque la lleva el RTC: un despertar programado tiene hora válida de inmediato, aunque algo desviada.
+- **Un despertar programado de noche no debe redibujar:** el arranque normal llama a `fetch_view`, y eso eran 20 s de panel cada 4 h. Al arrancar se distingue la causa con `esp_sleep_get_wakeup_cause()`:
+  - **Timer:** solo dibuja si ya es horario laboral.
+  - **Botón:** respeta el modo que eligió el usuario.
+  - **Arranque en frío:** manda el horario, como antes.
+- **ext1 no activa pull-ups en deep sleep:** ESPHome solo los configura para `wakeup_pin` (ext0). Funciona porque los tres botones tienen pull-up externo de 10 kΩ a `SYS_3V3` (R30/R34/R36 en el esquemático) y un condensador de 100 nF.
+- **El mismo GPIO en el botón y en el wakeup:** hay que poner `allow_other_uses: true` en los dos lugares.
+- **Los `globals` con `restore_value` sobreviven al deep sleep:** `deep_sleep.enter` corre los `on_shutdown`, que guardan los globals y sincronizan las preferencias en NVS.
+
+---
+
+## 9. Scripts Reutilizables Desarrollados
 
 | Script | Ubicación | Descripción |
 | :--- | :--- | :--- |
@@ -251,4 +312,6 @@ Probado con [`test_adapt_gallery_image.py`](../projects/second_brain_display/bac
 | **`generate_cien_anos_tree.py`** | [`backend/generate_cien_anos_tree.py`](../projects/second_brain_display/backend/generate_cien_anos_tree.py) | Póster del árbol Buendía sin spoilers, definido por datos (personas, uniones, hijos) y dibujado con las 6 tintas exactas. |
 | **`adapt_gallery_image.py`** | [`backend/adapt_gallery_image.py`](../projects/second_brain_display/backend/adapt_gallery_image.py) | Encuadre 5:3, tono adaptativo y tramado a las 6 tintas puras (`--mode auto\|bn\|bayer\|acento\|color`, falla si pasa de 64 KB). |
 | **`test_adapt_gallery_image.py`** | [`backend/test_adapt_gallery_image.py`](../projects/second_brain_display/backend/test_adapt_gallery_image.py) | Self-check: la salida no cambia al pasar por la réplica del umbral del driver. |
+| **`test_schedule.cpp`** | [`firmware/test_schedule.cpp`](../projects/second_brain_display/firmware/test_schedule.cpp) | Self-check del horario de deep sleep (`schedule.h`): horario laboral y tiempo hasta las próximas 08:45 hábiles. |
+| **`test_server_if_changed.py`** | [`backend/test_server_if_changed.py`](../projects/second_brain_display/backend/test_server_if_changed.py) | Self-check del refresco condicional: cuándo `/render?if_changed=1` responde 304 y cuándo 200. |
 | **`start_service.sh`** | [`backend/start_service.sh`](../projects/second_brain_display/backend/start_service.sh) | Inicia el backend con `-u` (unbuffered logging) y gestión automática de PID. |
