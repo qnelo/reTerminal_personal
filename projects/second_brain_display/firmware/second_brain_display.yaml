@@ -202,7 +202,7 @@ light:
 image:
   - platform: online_image
     id: sb_view_image
-    url: "http://192.168.4.36:8088/render?view=resumen"
+    url: "http://192.168.4.36:8088/render?mode=pendientes&idx=0"
     format: PNG
     type: RGB565
     buffer_size: 65536
@@ -256,9 +256,8 @@ script:
           id(awake_until_ms) = millis() + AWAKE_GRACE_MS;  // que no se duerma a mitad del refresco
           std::string url;
           if (id(display_mode) == 0) {
-            // Modo Pendientes Simpli
-            const char* views[] = {"resumen", "alta", "media", "baja", "clientes"};
-            url = std::string("http://192.168.4.36:8088/render?view=") + views[id(view_index)];
+            // Modo Pendientes Simpli (pestañas dinámicas: el backend resuelve idx % total_vistas)
+            url = std::string("http://192.168.4.36:8088/render?mode=pendientes&idx=") + esphome::to_string(id(view_index));
             if (id(only_if_changed) && id(screen_synced)) {
               url += "&if_changed=1";
             }
@@ -369,14 +368,14 @@ deep_sleep:
           allow_other_uses: true
         on_wake:
           - lambda: |-
-              if (id(display_mode) == 0) id(view_index) = (id(view_index) + 1) % 5;
+              if (id(display_mode) == 0) id(view_index) += 1;
               else id(gallery_index) += 1;
       - pin: # Izquierdo: despierta y retrocede
           number: GPIO5
           allow_other_uses: true
         on_wake:
           - lambda: |-
-              if (id(display_mode) == 0) id(view_index) = (id(view_index) - 1 + 5) % 5;
+              if (id(display_mode) == 0) id(view_index) -= 1;
               else id(gallery_index) -= 1;
 
 interval:
@@ -450,7 +449,7 @@ binary_sensor:
               return;
             }
             if (id(display_mode) == 0) {
-              id(view_index) = (id(view_index) - 1 + 5) % 5;
+              id(view_index) -= 1;
             } else {
               id(gallery_index) -= 1;
             }
@@ -493,7 +492,7 @@ binary_sensor:
               return;
             }
             if (id(display_mode) == 0) {
-              id(view_index) = (id(view_index) + 1) % 5;
+              id(view_index) += 1;
             } else {
               id(gallery_index) += 1;
             }

@@ -27,7 +27,7 @@ from datetime import datetime
 from typing import Any
 
 from data_provider import get_pendientes_data
-from renderer import render_view, voltage_to_percentage
+from renderer import render_view, resolve_tab_index, voltage_to_percentage
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
@@ -128,10 +128,22 @@ class Handler(BaseHTTPRequestHandler):
             update_telemetry(params, self.client_address[0])
             data = get_pendientes_data()
             data["telemetria"] = GLOBAL_TELEMETRY
-            view = params.get("view", [None])[0]
-            if view and view in data.get("vistas", {}):
-                payload = data["vistas"][view]
+            tabs = data.get("tabs", [])
+            if "idx" in params and tabs:
+                try:
+                    idx = int(params["idx"][0])
+                except (ValueError, TypeError):
+                    idx = 0
+                payload = dict(tabs[resolve_tab_index(idx, tabs)])
                 payload["telemetria"] = GLOBAL_TELEMETRY
+            elif "view" in params and tabs:
+                view = params["view"][0]
+                matched = next((t for t in tabs if t.get("id") == view), None)
+                if matched:
+                    payload = dict(matched)
+                    payload["telemetria"] = GLOBAL_TELEMETRY
+                else:
+                    payload = data
             else:
                 payload = data
 
@@ -196,18 +208,29 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(img_bytes)
                 return
 
-            # Modo Pendientes de Simpli habitual
-            view = params.get("view", ["resumen"])[0]
+            # Modo Pendientes de Simpli (pestañas dinámicas: Resumen + 1 por cliente)
             data = get_pendientes_data()
-            # Solo el contenido de la vista: hora y telemetría no cuentan como cambio; vence_str sí (Mañana→Hoy).
-            view_json = json.dumps([view, data.get("vistas", {}).get(view)], sort_keys=True, ensure_ascii=False)
+            tabs = data.get("tabs", [])
+            if "idx" in params:
+                try:
+                    raw_idx = int(params["idx"][0])
+                except (ValueError, TypeError):
+                    raw_idx = 0
+                resolved_idx = resolve_tab_index(raw_idx, tabs)
+            else:
+                view = params.get("view", ["resumen"])[0]
+                resolved_idx = resolve_tab_index(view, tabs)
+
+            tab_payload = tabs[resolved_idx] if tabs else None
+            # Solo el contenido de la pestaña y el total de pestañas [k/N]: hora y telemetría no cuentan.
+            view_json = json.dumps([resolved_idx, len(tabs), tab_payload], sort_keys=True, ensure_ascii=False)
             view_hash = hashlib.sha256(view_json.encode("utf-8")).hexdigest()
             if "if_changed" in params and view_hash == LAST_DEVICE_HASH:
                 self.send_response(HTTPStatus.NOT_MODIFIED)
                 self.end_headers()
                 return
 
-            img = render_view(view, data, telemetry=GLOBAL_TELEMETRY)
+            img = render_view(resolved_idx, data, telemetry=GLOBAL_TELEMETRY)
 
             buf = io.BytesIO()
             img.save(buf, format="PNG", optimize=True)
@@ -263,40 +286,69 @@ class Handler(BaseHTTPRequestHandler):
     <h1>📟 reTerminal E1002 — Pendientes Simpli</h1>
     <div class="subtitle">Simulador y API en vivo del panel de pendientes para la pantalla E Ink Spectra 6 (800×480)</div>
     
-    <div class="nav">
-        <a class="btn active" href="#" onclick="loadView('resumen', this)">[1/5] Resumen</a>
-        <a class="btn" href="#" onclick="loadView('alta', this)">[2/5] Alta Prioridad</a>
-        <a class="btn" href="#" onclick="loadView('media', this)">[3/5] Media Prioridad</a>
-        <a class="btn" href="#" onclick="loadView('baja', this)">[4/5] Baja Prioridad</a>
-        <a class="btn" href="#" onclick="loadView('clientes', this)">[5/5] Por Cliente</a>
-        <a class="btn" style="border-color: #f59e0b; color: #fbbf24;" href="#" onclick="loadGallery(0, this)">🖼️ [Galería 1/2] Árbol Buendía</a>
-        <a class="btn" style="border-color: #10b981; color: #34d399;" href="#" onclick="loadGallery(1, this)">🐱 [Galería 2/2] Gatito</a>
+    <div class="nav" id="navBar">
+        <a class="btn active" href="#" onclick="loadTab(0, this); return false;">[1/1] Resumen</a>
         <a class="btn" href="/api/pendientes" target="_blank">Ver JSON API 🔗</a>
     </div>
 
     <div class="preview-box">
-        <img id="previewImg" src="/render?view=resumen" alt="Vista E-Ink" width="800" height="480">
+        <img id="previewImg" src="/render?mode=pendientes&idx=0" alt="Vista E-Ink" width="800" height="480">
     </div>
 
     <div class="info-panel">
-        <p>• <strong>Endpoint de Pendientes</strong>: <code>http://&lt;IP_DE_LA_PI&gt;:8088/render?view=resumen</code></p>
-        <p>• <strong>Endpoint de Galería</strong>: <code>http://&lt;IP_DE_LA_PI&gt;:8088/render?mode=galeria&idx=0</code></p>
+        <p>• <strong>Endpoint de Pendientes</strong>: <code>http://&lt;IP_DE_LA_PI&gt;:8088/render?mode=pendientes&amp;idx=0</code></p>
+        <p>• <strong>Endpoint de Galería</strong>: <code>http://&lt;IP_DE_LA_PI&gt;:8088/render?mode=galeria&amp;idx=0</code></p>
         <p>• <strong>Atajo de Botones en reTerminal</strong>: Presionar <strong>Izquierdo + Derecho juntos</strong> conmuta entre Pendientes y Galería.</p>
     </div>
 
     <script>
-        function loadView(view, el) {
+        function setActive(el) {
             document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
             if (el) el.classList.add('active');
-            const img = document.getElementById('previewImg');
-            img.src = '/render?view=' + view + '&t=' + Date.now();
+        }
+        function loadTab(idx, el) {
+            setActive(el);
+            document.getElementById('previewImg').src = '/render?mode=pendientes&idx=' + idx + '&t=' + Date.now();
         }
         function loadGallery(idx, el) {
-            document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
-            if (el) el.classList.add('active');
-            const img = document.getElementById('previewImg');
-            img.src = '/render?mode=galeria&idx=' + idx + '&t=' + Date.now();
+            setActive(el);
+            document.getElementById('previewImg').src = '/render?mode=galeria&idx=' + idx + '&t=' + Date.now();
         }
+        async function buildNav() {
+            const nav = document.getElementById('navBar');
+            const [pRes, gRes] = await Promise.all([fetch('/api/pendientes'), fetch('/api/gallery')]);
+            const pData = await pRes.json();
+            const gData = await gRes.json();
+            const tabs = pData.tabs || [];
+            const imgs = gData.images || [];
+            nav.innerHTML = '';
+            tabs.forEach((t, i) => {
+                const a = document.createElement('a');
+                a.className = 'btn' + (i === 0 ? ' active' : '');
+                a.href = '#';
+                const label = t.tipo === 'resumen' ? `[${i + 1}/${tabs.length}] Resumen` : `[${i + 1}/${tabs.length}] ${t.cliente} (${t.total})`;
+                a.textContent = label;
+                a.onclick = (ev) => { ev.preventDefault(); loadTab(i, a); };
+                nav.appendChild(a);
+            });
+            imgs.forEach((name, i) => {
+                const a = document.createElement('a');
+                a.className = 'btn';
+                a.style.borderColor = '#f59e0b';
+                a.style.color = '#fbbf24';
+                a.href = '#';
+                a.textContent = `🖼️ [Galería ${i + 1}/${imgs.length}] ${name}`;
+                a.onclick = (ev) => { ev.preventDefault(); loadGallery(i, a); };
+                nav.appendChild(a);
+            });
+            const apiBtn = document.createElement('a');
+            apiBtn.className = 'btn';
+            apiBtn.href = '/api/pendientes';
+            apiBtn.target = '_blank';
+            apiBtn.textContent = 'Ver JSON API 🔗';
+            nav.appendChild(apiBtn);
+        }
+        buildNav();
     </script>
 </body>
 </html>"""

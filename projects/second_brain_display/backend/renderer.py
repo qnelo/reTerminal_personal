@@ -42,8 +42,6 @@ FONT_SUBBAR_RIGHT = get_font(13, bold=True)
 FONT_ROW_NUM = get_font(13, bold=True)
 FONT_ROW_CLIENT = get_font(12, bold=True)
 FONT_ROW_TITLE = get_font(15, bold=True)
-FONT_CLIENT_HEADER = get_font(15, bold=True)
-FONT_CLIENT_TITLE = get_font(14, bold=True)
 FONT_FOOTER = get_font(14, bold=True)
 
 
@@ -136,16 +134,22 @@ def draw_base_layout(
 
     # 1. Header superior compacto (38 px)
     draw.rectangle((0, 0, 800, HEADER_HEIGHT), fill=COLOR_BLUE)
-    draw.text((14, 8), "Pendientes Simpli", fill=COLOR_WHITE, font=FONT_HEADER)
+    brand = "Pendientes Simpli"
+    draw.text((14, 8), brand, fill=COLOR_WHITE, font=FONT_HEADER)
+    brand_end_x = 14 + text_width(draw, brand, FONT_HEADER) + 16
 
     info_y = 11
     if vbat_val is not None:
         bat_pct = voltage_to_percentage(vbat_val)
         bat_color = COLOR_GREEN if bat_pct > 15 else COLOR_RED
-
-        base_info = f"{view_title.upper()}  [{page_indicator}]  •  {timestamp_str}  •  "
-        base_w = text_width(draw, base_info, FONT_HEADER_INFO)
+        suffix = f"  [{page_indicator}]  •  {timestamp_str}  •  "
         pct_text = f"{bat_pct}%"
+        fixed_right_w = text_width(draw, suffix, FONT_HEADER_INFO) + 26 + 5 + text_width(draw, pct_text, FONT_HEADER_INFO)
+        max_title_w = 800 - 14 - fixed_right_w - brand_end_x
+        safe_title = truncate_text(draw, view_title.upper(), max_title_w, FONT_HEADER_INFO)
+
+        base_info = f"{safe_title}{suffix}"
+        base_w = text_width(draw, base_info, FONT_HEADER_INFO)
         pct_w = text_width(draw, pct_text, FONT_HEADER_INFO)
 
         start_x = 800 - 14 - (base_w + 26 + 5 + pct_w)
@@ -159,7 +163,10 @@ def draw_base_layout(
         draw.rectangle((bx + 2, by + 2, bx + 2 + fill_w, by + 11), fill=bat_color)
         draw.text((bx + 30, info_y), pct_text, fill=COLOR_WHITE, font=FONT_HEADER_INFO)
     else:
-        right_info = f"{view_title.upper()}  [{page_indicator}]  •  {timestamp_str}"
+        suffix = f"  [{page_indicator}]  •  {timestamp_str}"
+        max_title_w = 800 - 14 - text_width(draw, suffix, FONT_HEADER_INFO) - brand_end_x
+        safe_title = truncate_text(draw, view_title.upper(), max_title_w, FONT_HEADER_INFO)
+        right_info = f"{safe_title}{suffix}"
         rw = text_width(draw, right_info, FONT_HEADER_INFO)
         draw.text((800 - rw - 14, info_y), right_info, fill=COLOR_WHITE, font=FONT_HEADER_INFO)
 
@@ -181,23 +188,39 @@ def draw_base_layout(
     return img, draw
 
 
-def draw_subbar_right_and_divider(draw: ImageDraw.ImageDraw, right_text: str) -> None:
+def draw_kpi_subbar(draw: ImageDraw.ImageDraw, kpis: dict[str, int], right_text: str) -> None:
+    y_sub = 42
+    cx = 14
+    for lbl, num, col in (
+        ("Alta", kpis["alta"], COLOR_RED),
+        ("Media", kpis["media"], COLOR_YELLOW),
+        ("Baja", kpis["baja"], COLOR_GREEN),
+    ):
+        draw.rectangle((cx, y_sub + 4, cx + 14, y_sub + 18), fill=col, outline=COLOR_BLACK, width=1)
+        txt = f"{num} {lbl}"
+        draw.text((cx + 20, y_sub + 3), txt, fill=COLOR_BLACK, font=FONT_SUBBAR)
+        cx += 20 + text_width(draw, txt, FONT_SUBBAR) + 22
+
     rw = text_width(draw, right_text, FONT_SUBBAR_RIGHT)
     draw.text((786 - rw, 47), right_text, fill=COLOR_BLACK, font=FONT_SUBBAR_RIGHT)
     draw.line((0, SUBBAR_BOTTOM, 800, SUBBAR_BOTTOM), fill=COLOR_BLACK, width=2)
 
 
-def draw_task_row(draw: ImageDraw.ImageDraw, ry: int, row_h: int, index_num: int, item: dict[str, Any], draw_divider: bool) -> None:
+def draw_task_row(
+    draw: ImageDraw.ImageDraw,
+    ry: int,
+    row_h: int,
+    index_num: int,
+    item: dict[str, Any],
+    show_client: bool,
+    draw_divider: bool,
+) -> None:
     p_color = priority_color(item["color"])
     draw.rounded_rectangle((12, ry + 6, 36, ry + row_h - 6), radius=3, fill=p_color)
     num_fg = COLOR_BLACK if p_color == COLOR_YELLOW else COLOR_WHITE
     num_str = str(index_num)
     nw = text_width(draw, num_str, FONT_ROW_NUM)
     draw.text((12 + (24 - nw) // 2, ry + 12), num_str, fill=num_fg, font=FONT_ROW_NUM)
-
-    cli_txt = item["cliente"]
-    draw.text((44, ry + 13), cli_txt, fill=COLOR_BLUE, font=FONT_ROW_CLIENT)
-    cw = text_width(draw, cli_txt, FONT_ROW_CLIENT)
 
     right_limit = 786
     if item.get("vence_str"):
@@ -206,9 +229,14 @@ def draw_task_row(draw: ImageDraw.ImageDraw, ry: int, row_h: int, index_num: int
         draw.text((786 - dw, ry + 13), due_txt, fill=COLOR_RED if is_critical else COLOR_BLACK, font=FONT_ROW_CLIENT)
         right_limit = 786 - dw - 10
 
-    tx = 44 + cw + 10
-    draw.text((tx - 6, ry + 12), "·", fill=COLOR_BLACK, font=FONT_ROW_TITLE)
-    tx += 4
+    tx = 44
+    if show_client:
+        cli_txt = item["cliente"]
+        draw.text((tx, ry + 13), cli_txt, fill=COLOR_BLUE, font=FONT_ROW_CLIENT)
+        tx += text_width(draw, cli_txt, FONT_ROW_CLIENT) + 10
+        draw.text((tx - 6, ry + 12), "·", fill=COLOR_BLACK, font=FONT_ROW_TITLE)
+        tx += 4
+
     title = truncate_text(draw, item["titulo"], right_limit - tx, FONT_ROW_TITLE)
     draw.text((tx, ry + 11), title, fill=COLOR_BLACK, font=FONT_ROW_TITLE)
 
@@ -216,26 +244,43 @@ def draw_task_row(draw: ImageDraw.ImageDraw, ry: int, row_h: int, index_num: int
         draw.line((12, ry + row_h, 788, ry + row_h), fill=COLOR_BLACK, width=1)
 
 
-def render_view_resumen(data: dict[str, Any], telemetry: dict[str, Any] | None = None) -> Image.Image:
-    v = data["vistas"]["resumen"]
-    img, draw = draw_base_layout("Resumen", "1/5", data["hora_corta"], telemetry=telemetry)
+def resolve_tab_index(view_ref: int | str, tabs: list[dict[str, Any]]) -> int:
+    if not tabs:
+        return 0
+    if isinstance(view_ref, int):
+        return view_ref % len(tabs)
+    if view_ref.lstrip("-").isdigit():
+        return int(view_ref) % len(tabs)
+    for i, tab in enumerate(tabs):
+        if tab.get("id") == view_ref or tab.get("titulo", "").lower() == view_ref.lower():
+            return i
+    return 0
 
-    # Sub-barra KPI compacta (28 px)
-    y_sub = 42
-    cx = 14
-    for lbl, num, col in (
-        ("Alta", v["kpis"]["alta"], COLOR_RED),
-        ("Media", v["kpis"]["media"], COLOR_YELLOW),
-        ("Baja", v["kpis"]["baja"], COLOR_GREEN),
-    ):
-        draw.rectangle((cx, y_sub + 4, cx + 14, y_sub + 18), fill=col, outline=COLOR_BLACK, width=1)
-        txt = f"{num} {lbl}"
-        draw.text((cx + 20, y_sub + 3), txt, fill=COLOR_BLACK, font=FONT_SUBBAR)
-        cx += 20 + text_width(draw, txt, FONT_SUBBAR) + 22
 
-    draw_subbar_right_and_divider(draw, f"TOTAL: {data['total_abiertos']}  •  ORDEN: PRIORIDAD")
+def render_tab(tab_idx: int, data: dict[str, Any], telemetry: dict[str, Any] | None = None) -> Image.Image:
+    tabs = data.get("tabs", [])
+    if not tabs:
+        img, draw = draw_base_layout("Resumen", "1/1", data.get("hora_corta", "--:--"), telemetry=telemetry)
+        draw.text((24, 120), "No hay pendientes abiertos. ¡Todo al día!", fill=COLOR_GREEN, font=FONT_SUBBAR)
+        return img
 
-    items = v["top_urgentes"][:9]
+    resolved = tab_idx % len(tabs)
+    tab = tabs[resolved]
+    page_indicator = f"{resolved + 1}/{len(tabs)}"
+    is_resumen = tab["tipo"] == "resumen"
+
+    img, draw = draw_base_layout(tab["titulo"], page_indicator, data["hora_corta"], telemetry=telemetry)
+
+    items = tab["items"][:9]
+    if is_resumen:
+        right_txt = f"TOTAL: {data['total_abiertos']}  •  ORDEN: PRIORIDAD"
+    elif tab["total"] > len(items):
+        right_txt = f"MOSTRANDO {len(items)} DE {tab['total']}"
+    else:
+        right_txt = f"CLIENTE: {tab['total']}  •  GLOBAL: {data['total_abiertos']}"
+
+    draw_kpi_subbar(draw, tab["kpis"], right_txt)
+
     if not items:
         draw.text((24, 120), "No hay pendientes abiertos. ¡Todo al día!", fill=COLOR_GREEN, font=FONT_SUBBAR)
         return img
@@ -244,89 +289,14 @@ def render_view_resumen(data: dict[str, Any], telemetry: dict[str, Any] | None =
     row_h = 41
     for i, item in enumerate(items):
         ry = y0 + i * (row_h + 1)
-        draw_task_row(draw, ry, row_h, i + 1, item, draw_divider=(i < len(items) - 1))
+        draw_task_row(draw, ry, row_h, i + 1, item, show_client=is_resumen, draw_divider=(i < len(items) - 1))
 
     return img
 
 
-def render_view_list(data: dict[str, Any], view_key: str, view_num: str, telemetry: dict[str, Any] | None = None) -> Image.Image:
-    v = data["vistas"][view_key]
-    img, draw = draw_base_layout(v["titulo"], view_num, data["hora_corta"], telemetry=telemetry)
-
-    p_color = priority_color(v["color"])
-    y_sub = 42
-    draw.rectangle((14, y_sub + 4, 28, y_sub + 18), fill=p_color, outline=COLOR_BLACK, width=1)
-    draw.text((34, y_sub + 3), f"{v['titulo'].upper()}  ({v['total']} PENDIENTES)", fill=COLOR_BLACK, font=FONT_SUBBAR)
-
-    items = v["items"][:9]
-    right_lbl = f"MOSTRANDO {len(items)} DE {v['total']}" if v["total"] > len(items) else f"TOTAL ABIERTOS: {data['total_abiertos']}"
-    draw_subbar_right_and_divider(draw, right_lbl)
-
-    if not items:
-        draw.text((24, 120), "No hay pendientes en esta categoría. ¡Todo al día!", fill=COLOR_GREEN, font=FONT_SUBBAR)
-        return img
-
-    y0 = 72
-    row_h = 41
-    for i, item in enumerate(items):
-        ry = y0 + i * (row_h + 1)
-        draw_task_row(draw, ry, row_h, i + 1, item, draw_divider=(i < len(items) - 1))
-
-    return img
-
-
-def render_view_clientes(data: dict[str, Any], telemetry: dict[str, Any] | None = None) -> Image.Image:
-    v = data["vistas"]["clientes"]
-    img, draw = draw_base_layout("Por Cliente", "5/5", data["hora_corta"], telemetry=telemetry)
-
-    draw.text((14, 45), f"POR CLIENTE ({v['total_clientes']} CUENTAS)", fill=COLOR_BLACK, font=FONT_SUBBAR)
-    draw_subbar_right_and_divider(draw, f"TOTAL ABIERTOS: {data['total_abiertos']}")
-
-    y_pos = 73
-    for grupo in v["grupos"][:4]:
-        if y_pos + 56 > FOOTER_Y:
-            break
-        client_header = f"• {grupo['cliente']} ({grupo['conteo']} pendientes)"
-        draw.text((14, y_pos), client_header, fill=COLOR_BLUE, font=FONT_CLIENT_HEADER)
-        y_pos += 23
-
-        tareas = grupo["tareas"][:2]
-        for idx, item in enumerate(tareas):
-            row_h = 31
-            p_color = priority_color(item["color"])
-            draw.rectangle((16, y_pos + 3, 21, y_pos + row_h - 3), fill=p_color)
-
-            right_limit = 786
-            if item.get("vence_str"):
-                due_txt, is_critical = format_compact_due(item["vence_str"])
-                dw = text_width(draw, due_txt, FONT_ROW_CLIENT)
-                draw.text((786 - dw, y_pos + 8), due_txt, fill=COLOR_RED if is_critical else COLOR_BLACK, font=FONT_ROW_CLIENT)
-                right_limit = 786 - dw - 10
-
-            t_text = truncate_text(draw, item["titulo"], right_limit - 30, FONT_CLIENT_TITLE)
-            draw.text((30, y_pos + 6), t_text, fill=COLOR_BLACK, font=FONT_CLIENT_TITLE)
-            if idx < len(tareas) - 1:
-                draw.line((30, y_pos + row_h, 786, y_pos + row_h), fill=COLOR_BLACK, width=1)
-            y_pos += row_h + 1
-
-        y_pos += 6
-
-    return img
-
-
-def render_view(view_name: str, data: dict[str, Any], telemetry: dict[str, Any] | None = None) -> Image.Image:
-    if view_name == "resumen":
-        return render_view_resumen(data, telemetry=telemetry)
-    elif view_name == "alta":
-        return render_view_list(data, "alta", "2/5", telemetry=telemetry)
-    elif view_name == "media":
-        return render_view_list(data, "media", "3/5", telemetry=telemetry)
-    elif view_name == "baja":
-        return render_view_list(data, "baja", "4/5", telemetry=telemetry)
-    elif view_name == "clientes":
-        return render_view_clientes(data, telemetry=telemetry)
-    else:
-        return render_view_resumen(data, telemetry=telemetry)
+def render_view(view_ref: int | str, data: dict[str, Any], telemetry: dict[str, Any] | None = None) -> Image.Image:
+    idx = resolve_tab_index(view_ref, data.get("tabs", []))
+    return render_tab(idx, data, telemetry=telemetry)
 
 
 if __name__ == "__main__":
@@ -334,8 +304,9 @@ if __name__ == "__main__":
     d = get_pendientes_data()
     out_dir = Path(__file__).resolve().parent / "previews"
     out_dir.mkdir(exist_ok=True)
-    for v in ["resumen", "alta", "media", "baja", "clientes"]:
-        pic = render_view(v, d)
-        pic_path = out_dir / f"{v}.png"
+    for i, tab in enumerate(d.get("tabs", [])):
+        pic = render_tab(i, d)
+        slug = tab["id"].replace(":", "_")
+        pic_path = out_dir / f"{i:02d}_{slug}.png"
         pic.save(pic_path)
-        print(f"Generado preview {v}: {pic_path}")
+        print(f"Generado preview {i + 1}/{len(d['tabs'])}: {pic_path}")
