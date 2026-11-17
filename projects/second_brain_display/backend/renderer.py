@@ -1,28 +1,31 @@
 """
 renderer.py
-Genera vistas gráficas de 800x480 px de ultra-alta legibilidad para la pantalla
+Genera vistas gráficas de 800x480 px de alta densidad y legibilidad para la pantalla
 ePaper Spectra 6 del reTerminal E1002 utilizando Pillow y fuentes en negrita.
 """
 from __future__ import annotations
 
-import io
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
 from typing import Any
+from PIL import Image, ImageDraw, ImageFont
 
-# Paleta oficial optimizada para Spectra 6
+# Paleta calibrada para el umbral duro de colorconv.h (Spectra 6):
+# todos los colores caen en la tinta esperada en el panel físico.
 COLOR_WHITE = (255, 255, 255)
 COLOR_BLACK = (0, 0, 0)
-COLOR_RED = (220, 38, 38)
-COLOR_BLUE = (30, 58, 138)
-COLOR_YELLOW = (217, 119, 6)
-COLOR_GREEN = (22, 101, 52)
-COLOR_LIGHT_GRAY = (243, 244, 246)
-COLOR_CARD_BORDER = (156, 163, 175)
+COLOR_RED = (210, 28, 28)
+COLOR_BLUE = (28, 68, 175)
+COLOR_YELLOW = (235, 200, 20)
+COLOR_GREEN = (20, 140, 48)
 
-# Carga de fuentes del sistema
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_FALLBACK = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+
+HEADER_HEIGHT = 38
+SUBBAR_BOTTOM = 68
+FOOTER_HEIGHT = 24
+FOOTER_Y = 480 - FOOTER_HEIGHT
+
 
 def get_font(size: int, bold: bool = True) -> ImageFont.FreeTypeFont:
     path = FONT_PATH if bold else FONT_FALLBACK
@@ -31,38 +34,49 @@ def get_font(size: int, bold: bool = True) -> ImageFont.FreeTypeFont:
     except Exception:
         return ImageFont.load_default()
 
-FONT_HEADER = get_font(22, bold=True)
-FONT_KPI_NUM = get_font(36, bold=True)
-FONT_KPI_LABEL = get_font(16, bold=True)
-FONT_CARD_TITLE = get_font(19, bold=True)
-FONT_BADGE = get_font(15, bold=True)
-FONT_FOOTER = get_font(15, bold=True)
-FONT_SECTION = get_font(20, bold=True)
+
+FONT_HEADER = get_font(20, bold=True)
+FONT_HEADER_INFO = get_font(14, bold=True)
+FONT_SUBBAR = get_font(15, bold=True)
+FONT_SUBBAR_RIGHT = get_font(13, bold=True)
+FONT_ROW_NUM = get_font(13, bold=True)
+FONT_ROW_CLIENT = get_font(12, bold=True)
+FONT_ROW_TITLE = get_font(15, bold=True)
+FONT_CLIENT_HEADER = get_font(15, bold=True)
+FONT_CLIENT_TITLE = get_font(14, bold=True)
+FONT_FOOTER = get_font(14, bold=True)
 
 
-def draw_rounded_rectangle(draw: ImageDraw.ImageDraw, xy: tuple, fill=None, outline=None, width=1, radius=6):
-    draw.rounded_rectangle(xy, radius=radius, fill=fill, outline=outline, width=width)
-
-
-def draw_badge(draw: ImageDraw.ImageDraw, x: int, y: int, text: str, bg_color: tuple, text_color: tuple = COLOR_WHITE) -> int:
-    """Dibuja una pastilla de color y devuelve la posición X final para concatenar."""
-    bbox = draw.textbbox((0, 0), text, font=FONT_BADGE)
-    tw = bbox[2] - bbox[0]
-    th = bbox[3] - bbox[1]
-    pad_x, pad_y = 8, 4
-    draw_rounded_rectangle(draw, (x, y, x + tw + pad_x * 2, y + th + pad_y * 2), fill=bg_color, radius=4)
-    draw.text((x + pad_x, y + pad_y - 1), text, fill=text_color, font=FONT_BADGE)
-    return x + tw + pad_x * 2 + 8
+def text_width(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont) -> int:
+    bbox = draw.textbbox((0, 0), text, font=font)
+    return bbox[2] - bbox[0]
 
 
 def truncate_text(draw: ImageDraw.ImageDraw, text: str, max_width: int, font: ImageFont.FreeTypeFont) -> str:
-    if draw.textbbox((0, 0), text, font=font)[2] <= max_width:
+    if max_width <= 0:
+        return ""
+    if text_width(draw, text, font) <= max_width:
         return text
     while len(text) > 3:
         text = text[:-1]
-        if draw.textbbox((0, 0), text + "...", font=font)[2] <= max_width:
+        if text_width(draw, text + "...", font) <= max_width:
             return text + "..."
     return text
+
+
+def priority_color(color_name: str) -> tuple[int, int, int]:
+    return {
+        "RED": COLOR_RED,
+        "YELLOW": COLOR_YELLOW,
+        "GREEN": COLOR_GREEN,
+    }.get(color_name, COLOR_BLACK)
+
+
+def format_compact_due(vence_str: str) -> tuple[str, bool]:
+    """Devuelve (texto_corto, es_critico) para mostrar fechas compactas en listas densas."""
+    is_critical = "Hoy" in vence_str or "atraso" in vence_str
+    text = vence_str if is_critical else vence_str.split(" (")[0]
+    return text, is_critical
 
 
 def voltage_to_percentage(v: float) -> int:
@@ -98,140 +112,139 @@ def voltage_to_percentage(v: float) -> int:
     return 0
 
 
-def draw_base_layout(view_title: str, page_indicator: str, timestamp_str: str, telemetry: dict[str, Any] | None = None) -> tuple[Image.Image, ImageDraw.ImageDraw]:
+def _parse_float(telemetry: dict[str, Any] | None, key: str) -> float | None:
+    if not telemetry or telemetry.get(key) is None:
+        return None
+    try:
+        return float(telemetry[key])
+    except (ValueError, TypeError):
+        return None
+
+
+def draw_base_layout(
+    view_title: str,
+    page_indicator: str,
+    timestamp_str: str,
+    telemetry: dict[str, Any] | None = None,
+) -> tuple[Image.Image, ImageDraw.ImageDraw]:
     img = Image.new("RGB", (800, 480), COLOR_WHITE)
     draw = ImageDraw.Draw(img)
 
-    vbat_val = None
-    if telemetry and telemetry.get("vbat") is not None:
-        try:
-            vbat_val = float(telemetry["vbat"])
-        except (ValueError, TypeError):
-            pass
+    vbat_val = _parse_float(telemetry, "vbat")
+    temp_val = _parse_float(telemetry, "temp")
+    hum_val = _parse_float(telemetry, "hum")
 
-    temp_val = None
-    if telemetry and telemetry.get("temp") is not None:
-        try:
-            temp_val = float(telemetry["temp"])
-        except (ValueError, TypeError):
-            pass
+    # 1. Header superior compacto (38 px)
+    draw.rectangle((0, 0, 800, HEADER_HEIGHT), fill=COLOR_BLUE)
+    draw.text((14, 8), "Pendientes Simpli", fill=COLOR_WHITE, font=FONT_HEADER)
 
-    hum_val = None
-    if telemetry and telemetry.get("hum") is not None:
-        try:
-            hum_val = float(telemetry["hum"])
-        except (ValueError, TypeError):
-            pass
-
-    # 1. Header superior (46 px)
-    draw.rectangle((0, 0, 800, 46), fill=COLOR_BLUE)
-    draw.text((16, 12), "Pendientes Simpli", fill=COLOR_WHITE, font=FONT_HEADER)
-    
-    # Bloque derecho de la cabecera (Vista, Página, Hora y Batería)
+    info_y = 11
     if vbat_val is not None:
         bat_pct = voltage_to_percentage(vbat_val)
-        # Verde desde 15% hacia arriba, roja desde 15% hacia abajo
-        bat_color = (34, 197, 94) if bat_pct > 15 else (220, 38, 38)
+        bat_color = COLOR_GREEN if bat_pct > 15 else COLOR_RED
 
         base_info = f"{view_title.upper()}  [{page_indicator}]  •  {timestamp_str}  •  "
-        bbox_base = draw.textbbox((0, 0), base_info, font=FONT_BADGE)
-        base_w = bbox_base[2] - bbox_base[0]
-
+        base_w = text_width(draw, base_info, FONT_HEADER_INFO)
         pct_text = f"{bat_pct}%"
-        bbox_p = draw.textbbox((0, 0), pct_text, font=FONT_BADGE)
-        pct_w = bbox_p[2] - bbox_p[0]
+        pct_w = text_width(draw, pct_text, FONT_HEADER_INFO)
 
-        # Ancho total: texto base + icono (26px) + gap (5px) + pct_text
-        total_w = base_w + 26 + 5 + pct_w
-        start_x = 800 - 16 - total_w
+        start_x = 800 - 14 - (base_w + 26 + 5 + pct_w)
+        draw.text((start_x, info_y), base_info, fill=COLOR_WHITE, font=FONT_HEADER_INFO)
 
-        # Dibujar texto base en blanco
-        draw.text((start_x, 15), base_info, fill=COLOR_WHITE, font=FONT_BADGE)
-
-        # Dibujar icono de batería
         bx = start_x + base_w
-        by = 16
-        # Contorno y borne positivo
-        draw.rounded_rectangle((bx, by, bx + 22, by + 13), radius=2, outline=bat_color, width=2)
-        draw.rounded_rectangle((bx + 23, by + 3, bx + 25, by + 10), radius=1, fill=bat_color)
-        # Relleno interior proporcional a la carga
-        fill_w = max(1, int(17 * (bat_pct / 100.0)))
-        draw.rounded_rectangle((bx + 2, by + 2, bx + 2 + fill_w, by + 11), radius=1, fill=bat_color)
-
-        # Texto de porcentaje siempre en blanco
-        draw.text((bx + 30, 15), pct_text, fill=COLOR_WHITE, font=FONT_BADGE)
+        by = 12
+        draw.rounded_rectangle((bx, by, bx + 22, by + 13), radius=2, outline=COLOR_WHITE, width=2)
+        draw.rectangle((bx + 23, by + 3, bx + 25, by + 10), fill=COLOR_WHITE)
+        fill_w = max(2, int(18 * (bat_pct / 100.0)))
+        draw.rectangle((bx + 2, by + 2, bx + 2 + fill_w, by + 11), fill=bat_color)
+        draw.text((bx + 30, info_y), pct_text, fill=COLOR_WHITE, font=FONT_HEADER_INFO)
     else:
         right_info = f"{view_title.upper()}  [{page_indicator}]  •  {timestamp_str}"
-        bbox_r = draw.textbbox((0, 0), right_info, font=FONT_BADGE)
-        draw.text((800 - (bbox_r[2] - bbox_r[0]) - 16, 15), right_info, fill=COLOR_WHITE, font=FONT_BADGE)
+        rw = text_width(draw, right_info, FONT_HEADER_INFO)
+        draw.text((800 - rw - 14, info_y), right_info, fill=COLOR_WHITE, font=FONT_HEADER_INFO)
 
-    # 2. Footer inferior (28 px)
-    draw.rectangle((0, 452, 800, 480), fill=COLOR_BLACK)
-    footer_left = "◄ Izq: Anterior   |   Der: Siguiente ►   |   Sync: Verde"
-    draw.text((16, 457), footer_left, fill=COLOR_WHITE, font=FONT_FOOTER)
+    # 2. Footer inferior compacto (24 px)
+    draw.rectangle((0, FOOTER_Y, 800, 480), fill=COLOR_BLACK)
+    footer_left = "◄ Izq: Anterior  |  Der: Siguiente ►  |  Sync: Verde"
+    draw.text((14, FOOTER_Y + 4), footer_left, fill=COLOR_WHITE, font=FONT_FOOTER)
 
-    # Detalle de telemetría a la derecha del footer (solo temperatura y humedad)
     telem_parts = []
     if temp_val is not None:
         telem_parts.append(f"{temp_val:.1f}°C")
     if hum_val is not None:
         telem_parts.append(f"{hum_val:.0f}% RH")
 
-    if telem_parts:
-        footer_right = "  •  ".join(telem_parts)
-    else:
-        footer_right = "Refresco: Lun-Vie 8:45 - 19:00"
-
-    bbox_fr = draw.textbbox((0, 0), footer_right, font=FONT_FOOTER)
-    draw.text((800 - (bbox_fr[2] - bbox_fr[0]) - 16, 457), footer_right, fill=COLOR_WHITE, font=FONT_FOOTER)
+    footer_right = "  •  ".join(telem_parts) if telem_parts else "Refresco: Lun-Vie 8:45 - 19:00"
+    fr_w = text_width(draw, footer_right, FONT_FOOTER)
+    draw.text((800 - fr_w - 14, FOOTER_Y + 4), footer_right, fill=COLOR_WHITE, font=FONT_FOOTER)
 
     return img, draw
+
+
+def draw_subbar_right_and_divider(draw: ImageDraw.ImageDraw, right_text: str) -> None:
+    rw = text_width(draw, right_text, FONT_SUBBAR_RIGHT)
+    draw.text((786 - rw, 47), right_text, fill=COLOR_BLACK, font=FONT_SUBBAR_RIGHT)
+    draw.line((0, SUBBAR_BOTTOM, 800, SUBBAR_BOTTOM), fill=COLOR_BLACK, width=2)
+
+
+def draw_task_row(draw: ImageDraw.ImageDraw, ry: int, row_h: int, index_num: int, item: dict[str, Any], draw_divider: bool) -> None:
+    p_color = priority_color(item["color"])
+    draw.rounded_rectangle((12, ry + 6, 36, ry + row_h - 6), radius=3, fill=p_color)
+    num_fg = COLOR_BLACK if p_color == COLOR_YELLOW else COLOR_WHITE
+    num_str = str(index_num)
+    nw = text_width(draw, num_str, FONT_ROW_NUM)
+    draw.text((12 + (24 - nw) // 2, ry + 12), num_str, fill=num_fg, font=FONT_ROW_NUM)
+
+    cli_txt = item["cliente"]
+    draw.text((44, ry + 13), cli_txt, fill=COLOR_BLUE, font=FONT_ROW_CLIENT)
+    cw = text_width(draw, cli_txt, FONT_ROW_CLIENT)
+
+    right_limit = 786
+    if item.get("vence_str"):
+        due_txt, is_critical = format_compact_due(item["vence_str"])
+        dw = text_width(draw, due_txt, FONT_ROW_CLIENT)
+        draw.text((786 - dw, ry + 13), due_txt, fill=COLOR_RED if is_critical else COLOR_BLACK, font=FONT_ROW_CLIENT)
+        right_limit = 786 - dw - 10
+
+    tx = 44 + cw + 10
+    draw.text((tx - 6, ry + 12), "·", fill=COLOR_BLACK, font=FONT_ROW_TITLE)
+    tx += 4
+    title = truncate_text(draw, item["titulo"], right_limit - tx, FONT_ROW_TITLE)
+    draw.text((tx, ry + 11), title, fill=COLOR_BLACK, font=FONT_ROW_TITLE)
+
+    if draw_divider:
+        draw.line((12, ry + row_h, 788, ry + row_h), fill=COLOR_BLACK, width=1)
 
 
 def render_view_resumen(data: dict[str, Any], telemetry: dict[str, Any] | None = None) -> Image.Image:
     v = data["vistas"]["resumen"]
     img, draw = draw_base_layout("Resumen", "1/5", data["hora_corta"], telemetry=telemetry)
 
-    # 3 Cajas KPI de Resumen
-    kpis = [
-        ("ALTA PRIORIDAD", str(v["kpis"]["alta"]), COLOR_RED),
-        ("MEDIA PRIORIDAD", str(v["kpis"]["media"]), COLOR_YELLOW),
-        ("BAJA PRIORIDAD", str(v["kpis"]["baja"]), COLOR_GREEN),
-    ]
+    # Sub-barra KPI compacta (28 px)
+    y_sub = 42
+    cx = 14
+    for lbl, num, col in (
+        ("Alta", v["kpis"]["alta"], COLOR_RED),
+        ("Media", v["kpis"]["media"], COLOR_YELLOW),
+        ("Baja", v["kpis"]["baja"], COLOR_GREEN),
+    ):
+        draw.rectangle((cx, y_sub + 4, cx + 14, y_sub + 18), fill=col, outline=COLOR_BLACK, width=1)
+        txt = f"{num} {lbl}"
+        draw.text((cx + 20, y_sub + 3), txt, fill=COLOR_BLACK, font=FONT_SUBBAR)
+        cx += 20 + text_width(draw, txt, FONT_SUBBAR) + 22
 
-    card_w = 248
-    for i, (label, count, color) in enumerate(kpis):
-        x = 16 + i * (card_w + 14)
-        draw_rounded_rectangle(draw, (x, 56, x + card_w, 126), fill=COLOR_LIGHT_GRAY, outline=color, width=2, radius=6)
-        # Pastilla de color lateral
-        draw_rounded_rectangle(draw, (x, 56, x + 8, 126), fill=color, radius=2)
-        draw.text((x + 22, 64), count, fill=color, font=FONT_KPI_NUM)
-        draw.text((x + 22, 102), label, fill=COLOR_BLACK, font=FONT_KPI_LABEL)
+    draw_subbar_right_and_divider(draw, f"TOTAL: {data['total_abiertos']}  •  ORDEN: PRIORIDAD")
 
-    # Subtítulo
-    draw.text((16, 140), "TAREAS DE MÁXIMA PRIORIDAD Y URGENCIA", fill=COLOR_BLACK, font=FONT_SECTION)
-    draw.line((16, 166, 784, 166), fill=COLOR_CARD_BORDER, width=1)
+    items = v["top_urgentes"][:9]
+    if not items:
+        draw.text((24, 120), "No hay pendientes abiertos. ¡Todo al día!", fill=COLOR_GREEN, font=FONT_SUBBAR)
+        return img
 
-    # Lista de 4 tarjetas urgentes
-    y_start = 176
-    card_h = 62
-    for i, item in enumerate(v["top_urgentes"][:4]):
-        cy = y_start + i * (card_h + 6)
-        draw_rounded_rectangle(draw, (16, cy, 784, cy + card_h), fill=COLOR_LIGHT_GRAY, outline=COLOR_CARD_BORDER, width=1, radius=6)
-        
-        # Borde izquierdo de color según prioridad
-        badge_color = COLOR_RED if item["color"] == "RED" else COLOR_YELLOW
-        draw_rounded_rectangle(draw, (16, cy, 22, cy + card_h), fill=badge_color, radius=2)
-
-        # Badges (Cliente y Vencimiento)
-        bx = 32
-        bx = draw_badge(draw, bx, cy + 10, item["cliente"], COLOR_BLUE)
-        if item["vence_str"]:
-            draw_badge(draw, bx, cy + 10, item["vence_str"], COLOR_RED if "Hoy" in item["vence_str"] else COLOR_BLACK)
-
-        # Título de la tarea
-        title = truncate_text(draw, item["titulo"], 730, FONT_CARD_TITLE)
-        draw.text((32, cy + 34), title, fill=COLOR_BLACK, font=FONT_CARD_TITLE)
+    y0 = 72
+    row_h = 41
+    for i, item in enumerate(items):
+        ry = y0 + i * (row_h + 1)
+        draw_task_row(draw, ry, row_h, i + 1, item, draw_divider=(i < len(items) - 1))
 
     return img
 
@@ -240,31 +253,24 @@ def render_view_list(data: dict[str, Any], view_key: str, view_num: str, telemet
     v = data["vistas"][view_key]
     img, draw = draw_base_layout(v["titulo"], view_num, data["hora_corta"], telemetry=telemetry)
 
-    total = v["total"]
-    draw.text((16, 56), f"{v['titulo'].upper()}  ({total} PENDIENTES)", fill=COLOR_BLACK, font=FONT_SECTION)
-    draw.line((16, 82, 784, 82), fill=COLOR_CARD_BORDER, width=1)
+    p_color = priority_color(v["color"])
+    y_sub = 42
+    draw.rectangle((14, y_sub + 4, 28, y_sub + 18), fill=p_color, outline=COLOR_BLACK, width=1)
+    draw.text((34, y_sub + 3), f"{v['titulo'].upper()}  ({v['total']} PENDIENTES)", fill=COLOR_BLACK, font=FONT_SUBBAR)
 
-    items = v["items"]
+    items = v["items"][:9]
+    right_lbl = f"MOSTRANDO {len(items)} DE {v['total']}" if v["total"] > len(items) else f"TOTAL ABIERTOS: {data['total_abiertos']}"
+    draw_subbar_right_and_divider(draw, right_lbl)
+
     if not items:
-        draw.text((32, 140), "No hay pendientes en esta categoría. ¡Todo al día!", fill=COLOR_GREEN, font=FONT_CARD_TITLE)
+        draw.text((24, 120), "No hay pendientes en esta categoría. ¡Todo al día!", fill=COLOR_GREEN, font=FONT_SUBBAR)
         return img
 
-    y_start = 92
-    card_h = 64
-    badge_bg = COLOR_RED if v["color"] == "RED" else (COLOR_YELLOW if v["color"] == "YELLOW" else COLOR_GREEN)
-
-    for i, item in enumerate(items[:5]):
-        cy = y_start + i * (card_h + 6)
-        draw_rounded_rectangle(draw, (16, cy, 784, cy + card_h), fill=COLOR_LIGHT_GRAY, outline=COLOR_CARD_BORDER, width=1, radius=6)
-        draw_rounded_rectangle(draw, (16, cy, 22, cy + card_h), fill=badge_bg, radius=2)
-
-        bx = 32
-        bx = draw_badge(draw, bx, cy + 10, item["cliente"], COLOR_BLUE)
-        if item["vence_str"]:
-            draw_badge(draw, bx, cy + 10, item["vence_str"], COLOR_RED if "Hoy" in item["vence_str"] else COLOR_BLACK)
-
-        title = truncate_text(draw, item["titulo"], 730, FONT_CARD_TITLE)
-        draw.text((32, cy + 36), title, fill=COLOR_BLACK, font=FONT_CARD_TITLE)
+    y0 = 72
+    row_h = 41
+    for i, item in enumerate(items):
+        ry = y0 + i * (row_h + 1)
+        draw_task_row(draw, ry, row_h, i + 1, item, draw_divider=(i < len(items) - 1))
 
     return img
 
@@ -273,30 +279,37 @@ def render_view_clientes(data: dict[str, Any], telemetry: dict[str, Any] | None 
     v = data["vistas"]["clientes"]
     img, draw = draw_base_layout("Por Cliente", "5/5", data["hora_corta"], telemetry=telemetry)
 
-    draw.text((16, 56), f"PENDIENTES AGRUPADOS POR CUENTA Y CLIENTE ({v['total_clientes']} CLIENTES)", fill=COLOR_BLACK, font=FONT_SECTION)
-    draw.line((16, 82, 784, 82), fill=COLOR_CARD_BORDER, width=1)
+    draw.text((14, 45), f"POR CLIENTE ({v['total_clientes']} CUENTAS)", fill=COLOR_BLACK, font=FONT_SUBBAR)
+    draw_subbar_right_and_divider(draw, f"TOTAL ABIERTOS: {data['total_abiertos']}")
 
-    y_pos = 92
-    for grupo in v["grupos"][:3]:
-        # Encabezado del cliente
+    y_pos = 73
+    for grupo in v["grupos"][:4]:
+        if y_pos + 56 > FOOTER_Y:
+            break
         client_header = f"• {grupo['cliente']} ({grupo['conteo']} pendientes)"
-        draw.text((20, y_pos), client_header, fill=COLOR_BLUE, font=FONT_SECTION)
-        y_pos += 28
+        draw.text((14, y_pos), client_header, fill=COLOR_BLUE, font=FONT_CLIENT_HEADER)
+        y_pos += 23
 
-        for item in grupo["tareas"][:2]:
-            draw_rounded_rectangle(draw, (24, y_pos, 784, y_pos + 38), fill=COLOR_LIGHT_GRAY, outline=COLOR_CARD_BORDER, width=1, radius=4)
-            p_color = COLOR_RED if item["color"] == "RED" else (COLOR_YELLOW if item["color"] == "YELLOW" else COLOR_GREEN)
-            draw_rounded_rectangle(draw, (24, y_pos, 28, y_pos + 38), fill=p_color, radius=2)
+        tareas = grupo["tareas"][:2]
+        for idx, item in enumerate(tareas):
+            row_h = 31
+            p_color = priority_color(item["color"])
+            draw.rectangle((16, y_pos + 3, 21, y_pos + row_h - 3), fill=p_color)
 
-            t_text = truncate_text(draw, item["titulo"], 620, FONT_BADGE)
-            draw.text((36, y_pos + 10), t_text, fill=COLOR_BLACK, font=FONT_BADGE)
+            right_limit = 786
+            if item.get("vence_str"):
+                due_txt, is_critical = format_compact_due(item["vence_str"])
+                dw = text_width(draw, due_txt, FONT_ROW_CLIENT)
+                draw.text((786 - dw, y_pos + 8), due_txt, fill=COLOR_RED if is_critical else COLOR_BLACK, font=FONT_ROW_CLIENT)
+                right_limit = 786 - dw - 10
 
-            if item["vence_str"]:
-                draw_badge(draw, 680, y_pos + 6, item["vence_str"], COLOR_BLACK)
+            t_text = truncate_text(draw, item["titulo"], right_limit - 30, FONT_CLIENT_TITLE)
+            draw.text((30, y_pos + 6), t_text, fill=COLOR_BLACK, font=FONT_CLIENT_TITLE)
+            if idx < len(tareas) - 1:
+                draw.line((30, y_pos + row_h, 786, y_pos + row_h), fill=COLOR_BLACK, width=1)
+            y_pos += row_h + 1
 
-            y_pos += 44
-
-        y_pos += 8
+        y_pos += 6
 
     return img
 

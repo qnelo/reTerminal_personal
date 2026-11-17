@@ -85,7 +85,7 @@ def get_pendientes_data() -> dict[str, Any]:
         }
 
     # Vista 0: Resumen General
-    top_urgentes = [to_card(p, i + 1) for i, p in enumerate(abiertos[:4])]
+    top_urgentes = [to_card(p, i + 1) for i, p in enumerate(abiertos[:9])]
     vista_resumen = {
         "titulo": "Resumen General",
         "total_abiertos": len(abiertos),
@@ -104,7 +104,7 @@ def get_pendientes_data() -> dict[str, Any]:
         "titulo": "Prioridad Alta",
         "total": len(items_alta),
         "color": "RED",
-        "items": items_alta[:5],  # Primeros 5 para legibilidad máxima
+        "items": items_alta[:9],
     }
 
     # Vista 2: Media Prioridad
@@ -113,7 +113,7 @@ def get_pendientes_data() -> dict[str, Any]:
         "titulo": "Prioridad Media",
         "total": len(items_media),
         "color": "YELLOW",
-        "items": items_media[:5],
+        "items": items_media[:9],
     }
 
     # Vista 3: Baja Prioridad
@@ -122,7 +122,7 @@ def get_pendientes_data() -> dict[str, Any]:
         "titulo": "Prioridad Baja",
         "total": len(items_baja),
         "color": "GREEN",
-        "items": items_baja[:5],
+        "items": items_baja[:9],
     }
 
     # Vista 4: Por Clientes
