@@ -1,7 +1,7 @@
 """
 data_provider.py
-Consume datos del Second Brain (simpli-second-brain) usando herramientas del ecosistema
-y los estructura en pestañas dinámicas (Resumen + 1 pestaña por cliente) para el reTerminal E1002.
+Consume estadísticas del Second Brain (simpli-second-brain) reutilizando
+tools/herdr-pendientes/estadistica.py y sb.py para el dashboard único del reTerminal E1002.
 """
 from __future__ import annotations
 
@@ -12,118 +12,100 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-# Intentar importar sb desde el path estándar del bundle
 SB_TOOLS = Path(os.environ.get("SB_TOOLS") or "/home/pi/develop/personal/simpli-second-brain/tools/herdr-pendientes")
 if str(SB_TOOLS) not in sys.path:
     sys.path.insert(0, str(SB_TOOLS))
 
 try:
+    import estadistica
     import sb
 except ImportError:
+    estadistica = None
     sb = None
 
-PRIO_ORDER = {"muy-alta": 0, "alta": 1, "media-alta": 2, "media": 3, "baja": 4}
+MESES_ES = ("", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic")
 
 
-def format_due_date(vence: dt.date | None, today: dt.date) -> str:
-    if not vence:
-        return ""
-    diff = (vence - today).days
-    day_str = vence.strftime("%d-%b")
-    if diff == 0:
-        return f"{day_str} (Hoy)"
-    elif diff == 1:
-        return f"{day_str} (Mañana)"
-    elif diff < 0:
-        return f"{day_str} ({diff}d atraso)"
-    else:
-        return f"{day_str} (+{diff}d)"
+def _empty_prio() -> dict[str, Any]:
+    return {"n": 0, "prom": 0, "mediana": 0, "max": 0}
 
 
-def get_priority_color(prioridad: str) -> str:
-    """Devuelve código de color semántico para la pantalla Spectra 6."""
-    if prioridad in ("muy-alta", "alta"):
-        return "RED"
-    elif prioridad in ("media-alta", "media"):
-        return "YELLOW"
-    elif prioridad == "baja":
-        return "GREEN"
-    return "BLACK"
+def build_stats_payload(
+    vivos: list[Any],
+    archivados: list[Any],
+    clientes: set[str],
+    today: dt.date,
+    now: dt.datetime | None = None,
+) -> dict[str, Any]:
+    """Calcula el payload completo del dashboard estadístico a partir de listas de Pendiente."""
+    now = now or dt.datetime.now()
+    est = estadistica.calcular(vivos + archivados, clientes, today)
 
+    gen = est["abiertos"].get(estadistica.GENERAL, {})
+    kpis = {
+        g: dict(gen[g]) if g in gen else _empty_prio()
+        for g in estadistica.GRUPOS
+    }
+    total_abiertos = sum(kpis[g]["n"] for g in estadistica.GRUPOS)
 
-def count_kpis(items: list[Any]) -> dict[str, int]:
+    # Desglose por cliente o proyecto (tag resuelto por sb._cliente), usando el mismo filtro que estadistica.py
+    por_tag: dict[str, dict[str, int]] = defaultdict(lambda: {"alta": 0, "media": 0, "baja": 0})
+    for p in vivos:
+        if p.cerrado or not p.abierto or p.prioridad not in estadistica.GRUPO:
+            continue
+        key = p.cliente or "sin-tag"
+        por_tag[key][estadistica.GRUPO[p.prioridad]] += 1
+
+    por_cliente = [
+        {
+            "nombre": k,
+            "alta": v["alta"],
+            "media": v["media"],
+            "baja": v["baja"],
+            "total": v["alta"] + v["media"] + v["baja"],
+        }
+        for k, v in por_tag.items()
+    ]
+    por_cliente.sort(key=lambda r: (-r["total"], -r["alta"], -r["media"], r["nombre"]))
+
+    serie = est["serie"]
+    delta_ayer = serie[-1]["total"] - serie[-2]["total"] if len(serie) >= 2 else 0
+    delta_14d = serie[-1]["total"] - serie[0]["total"] if len(serie) >= 2 else 0
+    fecha_corta = f"{today.day}-{MESES_ES[today.month]}"
+
+    dashboard_tab = {
+        "id": "estadistica",
+        "tipo": "estadistica",
+        "titulo": "Estadística",
+        "hoy": est["hoy"],
+        "fecha_corta": fecha_corta,
+        "total": total_abiertos,
+        "kpis": kpis,
+        "delta_ayer": delta_ayer,
+        "delta_14d": delta_14d,
+        "por_cliente": por_cliente,
+        "serie": serie,
+    }
+
     return {
-        "alta": sum(1 for p in items if p.prioridad in ("muy-alta", "alta")),
-        "media": sum(1 for p in items if p.prioridad in ("media-alta", "media")),
-        "baja": sum(1 for p in items if p.prioridad == "baja"),
+        "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "hora_corta": now.strftime("%H:%M"),
+        "fecha_corta": fecha_corta,
+        "hoy": est["hoy"],
+        "total_abiertos": total_abiertos,
+        "total_clientes": len(por_cliente),
+        "total_vistas": 1,
+        "tabs": [dashboard_tab],
     }
 
 
 def get_pendientes_data() -> dict[str, Any]:
-    if sb is None:
-        return {"error": "Módulo sb.py no encontrado en " + str(SB_TOOLS)}
+    if sb is None or estadistica is None:
+        return {"error": "Módulos sb.py / estadistica.py no encontrados en " + str(SB_TOOLS)}
 
     today = dt.date.today()
-    pendientes, _ = sb.cargar()
-
-    abiertos = [p for p in pendientes if p.estado == "abierto"]
-    abiertos.sort(key=lambda p: (PRIO_ORDER.get(p.prioridad, 99), p.vence or dt.date(2099, 1, 1)))
-
-    def to_card(p: Any, index: int = 1) -> dict[str, Any]:
-        return {
-            "index": index,
-            "slug": p.slug,
-            "titulo": p.titulo,
-            "cliente": (p.cliente or "SIN-CLIENTE").upper(),
-            "prioridad": p.prioridad,
-            "color": get_priority_color(p.prioridad),
-            "vence_str": format_due_date(p.vence, today),
-            "es_urgente": p.prioridad in ("muy-alta", "alta") or bool(p.vence and (p.vence - today).days <= 1),
-        }
-
-    # Agrupar por cliente y ordenar por cantidad de pendientes (desc), luego mayor urgencia y nombre
-    por_cliente: dict[str, list[Any]] = defaultdict(list)
-    for p in abiertos:
-        por_cliente[(p.cliente or "SIN-CLIENTE").upper()].append(p)
-
-    clientes_ordenados = sorted(
-        por_cliente.items(),
-        key=lambda kv: (-len(kv[1]), min(PRIO_ORDER.get(p.prioridad, 99) for p in kv[1]), kv[0]),
-    )
-
-    tabs: list[dict[str, Any]] = [
-        {
-            "id": "resumen",
-            "tipo": "resumen",
-            "titulo": "Resumen",
-            "total": len(abiertos),
-            "kpis": count_kpis(abiertos),
-            "items": [to_card(p, i + 1) for i, p in enumerate(abiertos[:9])],
-            "top_clientes": [{"cliente": cli, "count": len(tasks)} for cli, tasks in clientes_ordenados],
-        }
-    ]
-
-    for cli_name, tasks in clientes_ordenados:
-        tabs.append(
-            {
-                "id": f"cliente:{cli_name.lower()}",
-                "tipo": "cliente",
-                "titulo": cli_name,
-                "cliente": cli_name,
-                "total": len(tasks),
-                "kpis": count_kpis(tasks),
-                "items": [to_card(p, i + 1) for i, p in enumerate(tasks[:9])],
-            }
-        )
-
-    return {
-        "timestamp": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "hora_corta": dt.datetime.now().strftime("%H:%M"),
-        "total_abiertos": len(abiertos),
-        "total_clientes": len(clientes_ordenados),
-        "total_vistas": len(tabs),
-        "tabs": tabs,
-    }
+    vivos, _ = sb.cargar()
+    return build_stats_payload(vivos, sb.archivados(), sb.clientes(), today)
 
 
 if __name__ == "__main__":

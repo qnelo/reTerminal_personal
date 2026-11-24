@@ -2,33 +2,20 @@
 
 Visualizador de escritorio Always-On, de **ultra-alta legibilidad**, sin retroiluminación ni emisión de luz azul, diseñado específicamente para la pantalla de tinta electrónica a color **E-Ink® Spectra™ 6 (800×480)** del **Seeed Studio reTerminal E1002**.
 
-Muestra en tiempo real los pendientes, prioridades, vencimientos y estados de cuentas del segundo cerebro de SimpliRoute, sincronizándose automáticamente por Wi-Fi con un backend ligero que corre en un servidor local o Raspberry Pi.
+Muestra en tiempo real las estadísticas de pendientes del segundo cerebro de SimpliRoute (`estadistica.py`: total abierto, desglose por prioridad, pendientes por cliente/proyecto y evolución consolidada de las últimas 2 semanas), sincronizándose automáticamente por Wi-Fi con un backend ligero que corre en un servidor local o Raspberry Pi.
 
 ---
 
-## 📸 Galería Visual de Vistas (800 × 480 px)
+## 📸 Vista Principal (800 × 480 px)
 
-El sistema cuenta con **5 vistas navegables** mediante los botones físicos del dispositivo:
+### Dashboard de Estadísticas (`00_estadistica.png`)
+Vista única de alta legibilidad sin paginación ni barra inferior:
+- **Header único (38 px, azul)**: marca + fecha corta a la izquierda; temperatura, humedad, hora e ícono dinámico de batería a la derecha.
+- **Franja KPI superior**: tarjeta `TOTAL ABIERTOS` con deltas (`vs ayer` y `en 14 días`) + tarjetas `ALTA`, `MEDIA` y `BAJA` con edad promedio.
+- **Abajo izquierda (`POR CLIENTE / PROYECTO`)**: barras horizontales apiladas por prioridad y total por cliente/proyecto activo (colapsa el excedente en `OTROS (+K)` si supera 7 activos).
+- **Abajo derecha (`ÚLTIMAS 2 SEMANAS`)**: gráfica de barras apiladas de los últimos 14 días por prioridad (`Alta` en la base, `Media` al medio, `Baja` arriba).
 
-### 1. Vista Resumen (`1/5`)
-Cajas de indicadores clave (KPIs) con conteos por prioridad (Alta, Media, Baja) y las 4 tareas de máxima urgencia con pastillas de cliente y vencimientos destacados.
-![Vista Resumen](backend/previews/resumen.png)
-
-### 2. Vista Alta Prioridad (`2/5`)
-Listado detallado de tareas críticas que requieren atención prioritaria o inmediata.
-![Vista Alta Prioridad](backend/previews/alta.png)
-
-### 3. Vista Media Prioridad (`3/5`)
-Tareas operativas y de seguimiento a mediano plazo.
-![Vista Media Prioridad](backend/previews/media.png)
-
-### 4. Vista Baja Prioridad (`4/5`)
-Backlog de tareas y pendientes secundarios.
-![Vista Baja Prioridad](backend/previews/baja.png)
-
-### 5. Vista Por Cliente (`5/5`)
-Pendientes organizados jerárquicamente por cliente y cuenta (Falabella, Bidfood, Walmart, etc.), facilitando la preparación de reuniones y seguimiento por cuenta.
-![Vista Por Cliente](backend/previews/clientes.png)
+![Dashboard de Estadísticas](backend/previews/00_estadistica.png)
 
 ---
 
@@ -79,14 +66,11 @@ Para lograr una legibilidad perfecta a 1 metro de distancia en el escritorio:
    - **Negro Puro** (`#000000`): Texto principal, líneas separadoras y fondo del pie de página.
    - **Blanco Puro** (`#FFFFFF`): Fondo general y textos sobre fondos oscuros.
 3. **Estructura y Proporciones de Pantalla (800 × 480 px)**:
-   - **Cabecera Superior (46 px - Azul)**:
-     - Izquierda: `Pendientes Simpli` (22 px Bold).
-     - Derecha: Nombre de vista y número `[X/5]`, hora de última actualización e **ícono dinámico de batería** con relleno proporcional y color semántico (**verde** > 15%, **rojo** ≤ 15%).
-   - **Cuerpo Central (376 px - Blanco con tarjetas grises)**:
-     - Separación de 6 px entre tarjetas, bordes redondeados y márgenes interiores (*padding*) de alto contraste.
-   - **Pie de Página (28 px - Negro)**:
-     - Izquierda: Guía de botones físicos: `◄ Izq: Anterior | Der: Siguiente ► | Sync: Verde`.
-     - Derecha: Condiciones ambientales del sensor SHT40: `XX.X°C • XX% RH`.
+   - **Cabecera Superior Única (38 px - Azul)**:
+     - Izquierda: `Pendientes Simpli • DD-Mes` (20 px / 14 px Bold).
+     - Derecha: Condiciones ambientales del sensor SHT40 (`XX.X°C • XX% RH`), hora de última actualización e **ícono dinámico de batería** con relleno proporcional y color semántico (**verde** > 15%, **rojo** ≤ 15%).
+   - **Cuerpo Principal (442 px - Blanco, sin pie de página)**:
+     - Franja superior de 4 tarjetas KPI (`TOTAL ABIERTOS`, `ALTA`, `MEDIA`, `BAJA`) + dos paneles inferiores (`POR CLIENTE / PROYECTO` y gráfica apilada de `ÚLTIMAS 2 SEMANAS`).
 
 ---
 

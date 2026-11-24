@@ -284,10 +284,10 @@ class Handler(BaseHTTPRequestHandler):
 </head>
 <body>
     <h1>📟 reTerminal E1002 — Pendientes Simpli</h1>
-    <div class="subtitle">Simulador y API en vivo del panel de pendientes para la pantalla E Ink Spectra 6 (800×480)</div>
+    <div class="subtitle">Simulador y API en vivo del dashboard de estadísticas de pendientes para la pantalla E Ink Spectra 6 (800×480)</div>
     
     <div class="nav" id="navBar">
-        <a class="btn active" href="#" onclick="loadTab(0, this); return false;">[1/1] Resumen</a>
+        <a class="btn active" href="#" onclick="loadTab(0, this); return false;">📊 Estadística</a>
         <a class="btn" href="/api/pendientes" target="_blank">Ver JSON API 🔗</a>
     </div>
 
@@ -296,9 +296,9 @@ class Handler(BaseHTTPRequestHandler):
     </div>
 
     <div class="info-panel">
-        <p>• <strong>Endpoint de Pendientes</strong>: <code>http://&lt;IP_DE_LA_PI&gt;:8088/render?mode=pendientes&amp;idx=0</code></p>
+        <p>• <strong>Endpoint de Estadísticas</strong>: <code>http://&lt;IP_DE_LA_PI&gt;:8088/render?mode=pendientes&amp;idx=0</code></p>
         <p>• <strong>Endpoint de Galería</strong>: <code>http://&lt;IP_DE_LA_PI&gt;:8088/render?mode=galeria&amp;idx=0</code></p>
-        <p>• <strong>Atajo de Botones en reTerminal</strong>: Presionar <strong>Izquierdo + Derecho juntos</strong> conmuta entre Pendientes y Galería.</p>
+        <p>• <strong>Atajo de Botones en reTerminal</strong>: Presionar <strong>Izquierdo + Derecho juntos</strong> conmuta entre Estadísticas y Galería; <strong>Verde</strong> fuerza refresco.</p>
     </div>
 
     <script>
@@ -326,7 +326,9 @@ class Handler(BaseHTTPRequestHandler):
                 const a = document.createElement('a');
                 a.className = 'btn' + (i === 0 ? ' active' : '');
                 a.href = '#';
-                const label = t.tipo === 'resumen' ? `[${i + 1}/${tabs.length}] Resumen` : `[${i + 1}/${tabs.length}] ${t.cliente} (${t.total})`;
+                const label = t.tipo === 'estadistica'
+                    ? `📊 Estadística (${t.total})`
+                    : (t.tipo === 'resumen' ? `[${i + 1}/${tabs.length}] Resumen` : `[${i + 1}/${tabs.length}] ${t.cliente} (${t.total})`);
                 a.textContent = label;
                 a.onclick = (ev) => { ev.preventDefault(); loadTab(i, a); };
                 nav.appendChild(a);
