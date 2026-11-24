@@ -71,13 +71,34 @@ _check_render(_sample_tab(total=0, scale=0) | {"por_cliente": [], "delta_ayer": 
 _check_render(_sample_tab(total=30, extra_clients=8))  # activa colapso en OTROS (+K)
 _check_render(_sample_tab(total=126, scale=6))         # valores > 100 y eje Y > 60
 
-# 2. Validar consistencia real con el Second Brain (si está disponible en disco)
+# 2. Validar exclusión de hibernados y consistencia real con el Second Brain
 if data_provider.sb is not None and data_provider.estadistica is not None:
+    hoy_test = dt.date(2026, 11, 24)
+    synth = [
+        data_provider.sb.Pendiente(
+            slug="a1", titulo="Activo", descripcion="", prioridad="alta", estado="abierto",
+            clase="", abierto=dt.date(2026, 11, 20), vence=None, resuelto=None,
+            tags=["acme"], cliente="acme", secciones={},
+        ),
+        data_provider.sb.Pendiente(
+            slug="h1", titulo="Hibernado", descripcion="", prioridad="baja", estado="hibernado",
+            clase="", abierto=dt.date(2026, 11, 10), vence=None, resuelto=None,
+            tags=["simplichat"], cliente="simplichat", secciones={}, hibernado=hoy_test,
+        ),
+    ]
+    res_synth = data_provider.build_stats_payload(synth, [], {"acme"}, hoy_test)
+    tab_synth = res_synth["tabs"][0]
+    assert tab_synth["total"] == 1, "hibernado no debe sumar al total"
+    assert tab_synth["kpis"]["baja"]["n"] == 0, "hibernado no debe sumar a su prioridad"
+    assert [c["nombre"] for c in tab_synth["por_cliente"]] == ["acme"], "hibernado no debe aparecer en por_cliente"
+    assert tab_synth["serie"][-1]["total"] == 1, "hibernado hoy no debe sumar en el día actual de la serie"
+
     live = data_provider.get_pendientes_data()
     assert live["total_vistas"] == 1
     t0 = live["tabs"][0]
     assert t0["tipo"] == "estadistica"
     assert sum(c["total"] for c in t0["por_cliente"]) == t0["total"], "suma por cliente == total"
+    assert t0["serie"][-1]["total"] == t0["total"], "último día de la serie == total abiertos"
     assert len(t0["serie"]) == 14
     _check_render(t0, telemetry={"vbat": 4.0, "temp": 24.0, "hum": 50.0})
 
